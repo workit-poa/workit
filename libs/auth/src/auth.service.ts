@@ -5,6 +5,7 @@ import { getAuthConfig, msFromMinutes, msFromDays } from "./config";
 import { hashPassword, verifyPassword } from "./password";
 import { createAccessToken, hashRefreshToken, newRefreshTokenValue, verifyAccessToken } from "./token";
 import { refreshTokens, users, type UserRow } from "./schema";
+import { provisionManagedWalletForUser } from "./wallet-provisioning";
 import {
   EmailLoginInput,
   EmailRegistrationInput,
@@ -67,6 +68,32 @@ async function issueTokensForUser(user: UserRow, ctx: AuthSessionContext): Promi
   };
 }
 
+async function createUserWithManagedWallet(values: Pick<UserRow, "email" | "passwordHash" | "googleId" | "facebookId" | "twitterId">) {
+  const db = getDb();
+  const [createdUser] = await db.insert(users).values(values).returning();
+  if (!createdUser) throw new Error("Failed to create account");
+
+  try {
+    const provisioned = await provisionManagedWalletForUser(createdUser.id);
+    if (!provisioned) return createdUser;
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        hederaAccountId: provisioned.hederaAccountId,
+        kmsKeyId: provisioned.kmsKeyId,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, createdUser.id))
+      .returning();
+
+    return updatedUser ?? createdUser;
+  } catch (error) {
+    await db.delete(users).where(eq(users.id, createdUser.id));
+    throw error;
+  }
+}
+
 export async function registerWithEmailPassword(input: EmailRegistrationInput, ctx: AuthSessionContext) {
   const db = getDb();
   const parsed = validateEmailRegistrationInput(input);
@@ -75,14 +102,13 @@ export async function registerWithEmailPassword(input: EmailRegistrationInput, c
     throw new Error("An account with this email already exists");
   }
 
-  const [user] = await db
-    .insert(users)
-    .values({
-      email: parsed.email,
-      passwordHash: await hashPassword(parsed.password)
-    })
-    .returning();
-  if (!user) throw new Error("Failed to create account");
+  const user = await createUserWithManagedWallet({
+    email: parsed.email,
+    passwordHash: await hashPassword(parsed.password),
+    googleId: null,
+    facebookId: null,
+    twitterId: null
+  });
 
   const tokens = await issueTokensForUser(user, ctx);
   return { user: toAuthUser(user), tokens };
@@ -136,17 +162,13 @@ export async function authenticateWithOAuth(input: OAuthCallbackInput, ctx: Auth
           .where(eq(users.id, userByEmail.id))
           .returning()
       )[0]
-    : (
-        await db
-          .insert(users)
-          .values({
-          email,
-            googleId: parsed.provider === "google" ? parsed.providerUserId : null,
-            facebookId: parsed.provider === "facebook" ? parsed.providerUserId : null,
-            twitterId: parsed.provider === "twitter" ? parsed.providerUserId : null
-          })
-          .returning()
-      )[0];
+    : await createUserWithManagedWallet({
+        email,
+        passwordHash: null,
+        googleId: parsed.provider === "google" ? parsed.providerUserId : null,
+        facebookId: parsed.provider === "facebook" ? parsed.providerUserId : null,
+        twitterId: parsed.provider === "twitter" ? parsed.providerUserId : null
+      });
   if (!linkedUser) throw new Error("Failed to link OAuth account");
 
   const tokens = await issueTokensForUser(linkedUser, ctx);

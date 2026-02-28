@@ -11,7 +11,10 @@
   },
   "devDependencies": {},
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.900.0",
+    "@hashgraph/sdk": "^2.62.0",
     "@workit/common": "workspace:*",
+    "bn.js": "5.2.1",
     "bcryptjs": "^2.4.3",
     "drizzle-orm": "^0.44.6",
     "jose": "^5.9.6",

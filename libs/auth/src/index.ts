@@ -6,3 +6,4 @@ export * from "./rate-limit";
 export * from "./schema";
 export * from "./token";
 export * from "./validation";
+export * from "./wallet-provisioning";
