@@ -9,8 +9,15 @@
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "node -e \"console.log('auth tests pending')\""
   },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6"
+  },
   "dependencies": {
-    "@workit/common": "workspace:*"
+    "@workit/common": "workspace:*",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "^0.44.6",
+    "jose": "^5.9.6",
+    "postgres": "^3.4.7",
+    "zod": "^3.24.1"
   }
 }
-

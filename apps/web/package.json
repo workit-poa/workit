@@ -13,6 +13,7 @@
     "@workit/auth": "workspace:*",
     "@workit/common": "workspace:*",
     "@workit/wallet": "workspace:*",
+    "jose": "^5.9.6",
     "next": "^15.1.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
