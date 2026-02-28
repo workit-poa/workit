@@ -3,14 +3,18 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "tsx watch src/index.tsx",
-    "build": "tsc -p tsconfig.json",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "node -e \"console.log('frontend tests pending')\""
   },
   "dependencies": {
     "@workit/auth": "workspace:*",
-    "@workit/common": "workspace:*"
+    "@workit/common": "workspace:*",
+    "@workit/wallet": "workspace:*",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }
-

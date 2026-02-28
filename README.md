@@ -1,11 +1,10 @@
 # Proof of Activity Monorepo
 
-Nx + pnpm monorepo for a Hedera-focused hackathon stack with shared TypeScript libraries for backend and frontend.
+Nx + pnpm monorepo for a Hedera-focused hackathon stack with a unified fullstack Next.js app and shared TypeScript libraries.
 
 ## Structure
 
-- `apps/frontend`: Web app shell
-- `apps/backend`: Express API shell
+- `apps/frontend`: Fullstack Next.js app (UI + API routes)
 - `libs/common`: Shared DTOs and utilities
 - `libs/auth`: Authentication domain logic
 - `libs/wallet`: Wallet domain logic
@@ -26,4 +25,3 @@ pnpm dev
 - `pnpm test`: Run all tests
 - `pnpm affected:build`: Build only affected projects
 - `pnpm graph`: Visualize dependency graph
-
