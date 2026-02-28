@@ -77,8 +77,9 @@ export function AppShell() {
               <CardTitle className="text-lg">Workit security context</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" /> HCS receipts + HTS rewards enabled</p>
+              <p className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" /> HCS receipts + Workit token payouts via HTS</p>
               <p className="inline-flex items-center gap-2"><Wallet className="h-4 w-4 text-primary" aria-hidden="true" /> Abstracted wallet: {session.abstractedWalletId}</p>
+              <p>KMS-backed wallet signing is orchestrated server-side for submissions, claims, and sponsored transactions.</p>
               <p>This is a minimal post-auth shell ready for quest feeds, creator tools, and proof history modules.</p>
               <Link href="/" className="text-foreground underline underline-offset-4">Return to marketing site</Link>
             </CardContent>

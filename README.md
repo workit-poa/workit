@@ -50,7 +50,7 @@ pnpm dev
   - Landing content sections: `apps/web/components/landing/landing-page.tsx`
   - Quest showcase cards: `apps/web/components/landing/quest-card.tsx`
   - Sample proof receipt fields: `apps/web/components/landing/receipt-viewer.tsx`
-  - Auth messaging and labels: `apps/web/components/auth/auth-entry-panel.tsx`
+  - Auth messaging and labels: `apps/web/components/auth/auth-entry-panel.tsx` (Formik + Yup OTP/OAuth panel)
 - Where to plug in real auth later:
   - Replace demo functions in `apps/web/lib/demo-auth.ts` with API-backed calls.
   - Keep app state wiring in `apps/web/components/auth/auth-provider.tsx`.

@@ -5,7 +5,7 @@ import { AuthProvider } from "../components/auth/auth-provider";
 export const metadata: Metadata = {
   title: "Workit | Proof-of-Activity Quest Engine",
   description:
-    "Workit is a Hedera-native Proof-of-Activity quest engine with gasless onboarding, HCS anchored receipts, and HTS rewards."
+    "Workit is a Hedera-native Proof-of-Activity quest engine with gasless onboarding, AWS KMS-backed wallets, HCS-anchored receipts, and tradable Workit token rewards."
 };
 
 export default function RootLayout({

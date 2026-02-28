@@ -6,13 +6,13 @@ import { Card, CardContent } from "../ui/card";
 
 type QuestCardProps = {
   title: string;
-  points: number;
+  tokenReward: string;
   chain: string;
   difficulty: "Easy" | "Medium" | "Hard";
   estimate: string;
 };
 
-export function QuestCard({ title, points, chain, difficulty, estimate }: QuestCardProps) {
+export function QuestCard({ title, tokenReward, chain, difficulty, estimate }: QuestCardProps) {
   return (
     <motion.div whileHover={{ y: -4 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}>
       <Card className="group border-border/70 bg-card/90 transition-all duration-300 hover:shadow-xl">
@@ -25,7 +25,7 @@ export function QuestCard({ title, points, chain, difficulty, estimate }: QuestC
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="inline-flex items-center gap-1 rounded-full bg-secondary/70 px-2.5 py-1 font-medium text-secondary-foreground">
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-              {points} XP
+              {tokenReward}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 font-medium text-muted-foreground">
               <Layers className="h-3.5 w-3.5" aria-hidden="true" />

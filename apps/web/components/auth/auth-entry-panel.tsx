@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useFormik } from "formik";
+import * as yup from "yup";
 import { CheckCircle2, Loader2, Mail, UserRound } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "../ui/button";
@@ -20,15 +22,19 @@ type AuthEntryPanelProps = {
   mode: "participant" | "creator";
 };
 
+const emailSchema = yup.object({
+  email: yup.string().trim().email("Enter a valid email address.").required("Email is required.")
+});
+
+const codeSchema = yup.object({
+  code: yup.string().trim().matches(/^\d{6}$/, "Enter the 6-digit code.").required("Verification code is required.")
+});
+
 export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
   const router = useRouter();
   const { setSession } = useAuth();
 
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<OauthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -42,55 +48,52 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
 
   const role = useMemo<AuthRole>(() => (mode === "creator" ? "creator" : "participant"), [mode]);
 
-  async function onSendCode() {
-    setError(null);
-    setNotice(null);
-    setDemoCode(null);
+  const emailFormik = useFormik({
+    initialValues: { email: "" },
+    validationSchema: emailSchema,
+    onSubmit: async values => {
+      setError(null);
+      setNotice(null);
+      setDemoCode(null);
 
-    if (!email.trim()) {
-      setError("Enter your email address first.");
-      return;
+      try {
+        const response = await sendEmailOtp(values.email);
+        setChallengeId(response.challengeId);
+        setDemoCode(response.demoCode);
+        setNotice("Verification code sent. In this demo, use the code below.");
+      } catch (submissionError) {
+        setError(submissionError instanceof Error ? submissionError.message : "Could not send code.");
+      }
     }
+  });
 
-    setIsSending(true);
-    try {
-      const response = await sendEmailOtp(email);
-      setChallengeId(response.challengeId);
-      setDemoCode(response.demoCode);
-      setNotice("Verification code sent. In this demo, use the code below.");
-    } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Could not send code.");
-    } finally {
-      setIsSending(false);
+  const codeFormik = useFormik({
+    initialValues: { code: "" },
+    validationSchema: codeSchema,
+    onSubmit: async values => {
+      if (!challengeId) {
+        setError("Request a verification code first.");
+        return;
+      }
+
+      setError(null);
+      setNotice(null);
+
+      try {
+        const session = await verifyEmailOtp({
+          challengeId,
+          email: emailFormik.values.email,
+          code: values.code,
+          role
+        });
+
+        setSession(session);
+        router.push("/app");
+      } catch (submissionError) {
+        setError(submissionError instanceof Error ? submissionError.message : "Code verification failed.");
+      }
     }
-  }
-
-  async function onVerifyCode() {
-    if (!challengeId) {
-      setError("Request a verification code first.");
-      return;
-    }
-
-    setError(null);
-    setNotice(null);
-    setIsVerifying(true);
-
-    try {
-      const session = await verifyEmailOtp({
-        challengeId,
-        email,
-        code,
-        role
-      });
-
-      setSession(session);
-      router.push("/app");
-    } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Code verification failed.");
-    } finally {
-      setIsVerifying(false);
-    }
-  }
+  });
 
   async function onOAuthSignIn(provider: OauthProvider) {
     setError(null);
@@ -123,119 +126,153 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
         <CardContent className="space-y-5">
           <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
             <p className="text-sm text-muted-foreground">
-              No wallet needed. Workit creates a secure, abstracted wallet for you after sign-in.
+              No wallet needed — Workit creates a secure, AWS KMS-backed wallet for your account. You&apos;ll use it to submit proofs and claim rewards.
             </p>
           </div>
 
-        <section className="space-y-3" aria-label="Email OTP sign-in">
-          <div className="space-y-2">
-            <Label htmlFor="auth-email">Email</Label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                id="auth-email"
-                type="email"
-                value={email}
-                placeholder="you@team.com"
-                onChange={event => setEmail(event.target.value)}
-                autoComplete="email"
-              />
-              <Button type="button" onClick={() => void onSendCode()} disabled={isSending} className="sm:min-w-36">
-                {isSending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4" aria-hidden="true" />}
-                <span className="ml-2">{isSending ? "Sending" : "Send Code"}</span>
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="auth-code">Verification code</Label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                id="auth-code"
-                type="text"
-                value={code}
-                placeholder="Enter 6-digit code"
-                onChange={event => setCode(event.target.value)}
-                inputMode="numeric"
-              />
-              <Button type="button" variant="secondary" onClick={() => void onVerifyCode()} disabled={isVerifying} className="sm:min-w-36">
-                {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-                <span className="ml-2">{isVerifying ? "Verifying" : "Verify"}</span>
-              </Button>
-            </div>
-          </div>
-
-          {demoCode ? <p className="text-xs text-muted-foreground">Demo code: <span className="font-semibold text-foreground">{demoCode}</span></p> : null}
-        </section>
-
-        <div className="relative py-1">
-          <div className="h-px bg-border" />
-          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            or continue with
-          </span>
-        </div>
-
-        <motion.section
-          className="grid gap-2 sm:grid-cols-3"
-          aria-label="OAuth sign-in"
-          initial="hidden"
-          animate="show"
-          variants={{
-            hidden: {},
-            show: {
-              transition: {
-                staggerChildren: 0.06
-              }
-            }
-          }}
-        >
-          {([
-            ["google", "Google"],
-            ["x", "X"],
-            ["discord", "Discord"]
-          ] as const).map(([provider, label]) => (
-            <motion.div
-              key={provider}
-              variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              whileHover={{ y: -1 }}
+          <section className="space-y-3" aria-label="Email OTP sign-in">
+            <form
+              className="space-y-2"
+              onSubmit={event => {
+                event.preventDefault();
+                void emailFormik.submitForm();
+              }}
+              noValidate
             >
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void onOAuthSignIn(provider)}
-                disabled={oauthLoading !== null}
-                className="w-full"
+              <Label htmlFor="auth-email">Email</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="auth-email"
+                  type="email"
+                  name="email"
+                  value={emailFormik.values.email}
+                  placeholder="you@team.com"
+                  onChange={emailFormik.handleChange}
+                  onBlur={emailFormik.handleBlur}
+                  autoComplete="email"
+                  aria-invalid={Boolean(emailFormik.touched.email && emailFormik.errors.email)}
+                  aria-describedby={emailFormik.errors.email ? "auth-email-error" : undefined}
+                />
+                <Button type="submit" disabled={emailFormik.isSubmitting} className="sm:min-w-36">
+                  {emailFormik.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4" aria-hidden="true" />}
+                  <span className="ml-2">{emailFormik.isSubmitting ? "Sending" : "Send Code"}</span>
+                </Button>
+              </div>
+              {emailFormik.touched.email && emailFormik.errors.email ? (
+                <p id="auth-email-error" className="text-sm text-destructive">
+                  {emailFormik.errors.email}
+                </p>
+              ) : null}
+            </form>
+
+            <form
+              className="space-y-2"
+              onSubmit={event => {
+                event.preventDefault();
+                void codeFormik.submitForm();
+              }}
+              noValidate
+            >
+              <Label htmlFor="auth-code">Verification code</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="auth-code"
+                  type="text"
+                  name="code"
+                  value={codeFormik.values.code}
+                  placeholder="Enter 6-digit code"
+                  onChange={codeFormik.handleChange}
+                  onBlur={codeFormik.handleBlur}
+                  inputMode="numeric"
+                  aria-invalid={Boolean(codeFormik.touched.code && codeFormik.errors.code)}
+                  aria-describedby={codeFormik.errors.code ? "auth-code-error" : undefined}
+                />
+                <Button type="submit" variant="secondary" disabled={codeFormik.isSubmitting} className="sm:min-w-36">
+                  {codeFormik.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+                  <span className="ml-2">{codeFormik.isSubmitting ? "Verifying" : "Verify"}</span>
+                </Button>
+              </div>
+              {codeFormik.touched.code && codeFormik.errors.code ? (
+                <p id="auth-code-error" className="text-sm text-destructive">
+                  {codeFormik.errors.code}
+                </p>
+              ) : null}
+            </form>
+
+            {demoCode ? (
+              <p className="text-xs text-muted-foreground">
+                Demo code: <span className="font-semibold text-foreground">{demoCode}</span>
+              </p>
+            ) : null}
+          </section>
+
+          <div className="relative py-1">
+            <div className="h-px bg-border" />
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              or continue with
+            </span>
+          </div>
+
+          <motion.section
+            className="grid gap-2 sm:grid-cols-3"
+            aria-label="OAuth sign-in"
+            initial="hidden"
+            animate="show"
+            variants={{
+              hidden: {},
+              show: {
+                transition: {
+                  staggerChildren: 0.06
+                }
+              }
+            }}
+          >
+            {([
+              ["google", "Google"],
+              ["x", "X"],
+              ["discord", "Discord"]
+            ] as const).map(([provider, label]) => (
+              <motion.div
+                key={provider}
+                variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                whileHover={{ y: -1 }}
               >
-                {oauthLoading === provider ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                <span className={oauthLoading === provider ? "ml-2" : ""}>{label}</span>
-              </Button>
-            </motion.div>
-          ))}
-        </motion.section>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void onOAuthSignIn(provider)}
+                  disabled={oauthLoading !== null}
+                  className="w-full"
+                >
+                  {oauthLoading === provider ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+                  <span className={oauthLoading === provider ? "ml-2" : ""}>{label}</span>
+                </Button>
+              </motion.div>
+            ))}
+          </motion.section>
 
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTitle>Authentication error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Authentication error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-        {notice ? (
-          <Alert>
-            <AlertTitle>Heads up</AlertTitle>
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        ) : null}
+          {notice ? (
+            <Alert>
+              <AlertTitle>Heads up</AlertTitle>
+              <AlertDescription>{notice}</AlertDescription>
+            </Alert>
+          ) : null}
 
-        <p className="text-center text-xs text-muted-foreground">
-          By continuing, you agree to Workit terms and security policies.
-        </p>
+          <p className="text-center text-xs text-muted-foreground">By continuing, you agree to Workit terms and security policies.</p>
 
-        <div className="text-center text-sm text-muted-foreground">
-          <Link href="/" className="focus-ring rounded-sm underline-offset-4 hover:underline">
-            Back to landing page
-          </Link>
-        </div>
+          <div className="text-center text-sm text-muted-foreground">
+            <Link href="/" className="focus-ring rounded-sm underline-offset-4 hover:underline">
+              Back to landing page
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </motion.div>

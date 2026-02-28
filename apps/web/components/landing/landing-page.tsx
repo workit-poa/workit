@@ -32,13 +32,8 @@ const navLinks = [
 const valueProps = [
   {
     icon: ShieldCheck,
-    title: "Auditable Proof Trail (HCS)",
-    body: "Every completion decision gets hashed and anchored to Hedera Consensus Service for tamper-evident replay."
-  },
-  {
-    icon: Coins,
-    title: "Instant Rewards (HTS points + NFT badges)",
-    body: "Issue points and collectible badges through Hedera Token Service with creator-defined reward rules."
+    title: "Verifiable Proof Trail (HCS)",
+    body: "Every completion decision is hashed and anchored to Hedera Consensus Service for tamper-evident replay."
   },
   {
     icon: Rocket,
@@ -46,32 +41,43 @@ const valueProps = [
     body: "Relay and paymaster support removes token friction so users can complete quests from day one."
   },
   {
+    icon: KeyRound,
+    title: "KMS-backed wallets (keys never exposed)",
+    body: "Every user gets an abstracted AWS KMS-backed wallet used for proof submission, claiming, and on-chain actions."
+  },
+  {
     icon: Blocks,
     title: "Platform-agnostic tasks (onchain + social)",
     body: "Mix wallet actions with YouTube, X, Discord, and off-chain proof tasks in one quest graph."
   },
   {
-    icon: KeyRound,
-    title: "Issuer-grade key security (AWS KMS + audit logs)",
-    body: "Signing keys stay in KMS with CloudTrail records and key policy controls for enterprise-safe operations."
+    icon: Coins,
+    title: "Tradable token rewards (Workit token)",
+    body: "Rewards are paid in Workit token and can be moved, claimed, or traded on Hedera-native DEX infrastructure."
   }
 ];
 
 const howItWorks = [
   "Creator publishes a quest, funds rewards, and funds gas sponsorship.",
-  "Participant completes onchain and social tasks.",
-  "Workit verifies evidence using APIs, Mirror Nodes, and custom verifiers.",
-  "Completion receipt hash is anchored to HCS.",
-  "Rewards are paid via HTS and proof links are shareable."
+  "Participant signs in with email or OAuth and receives an abstracted AWS KMS-backed wallet.",
+  "Participant completes onchain and/or social tasks, then submits proof.",
+  "Workit verifies evidence using APIs, Mirror Nodes, and custom verifiers, then anchors receipt hashes to HCS.",
+  "Rewards are paid in Workit token so users can claim, withdraw, and trade."
 ];
 
-const participantBullets = ["Sign in with email or OAuth", "Complete tasks", "Earn points + badges", "Export and share proof receipts"];
+const participantBullets = [
+  "Email/OAuth sign-in",
+  "No wallet setup",
+  "Complete tasks",
+  "Claim Workit token rewards",
+  "Share proof links"
+];
 const creatorBullets = [
   "Quest builder with reusable templates",
   "Budget controls for rewards and gas sponsorship",
-  "Fraud and Sybil resistance gates",
-  "CSV and JSON audit exports",
-  "Custom reward logic for communities"
+  "Eligibility gates and anti-bot checks",
+  "Analytics for completion and conversion",
+  "CSV and JSON audit exports"
 ];
 
 const faqs = [
@@ -80,20 +86,24 @@ const faqs = [
     answer: "No. Core interactions can be gas-sponsored through relay and paymaster flows."
   },
   {
+    question: "Is a wallet required?",
+    answer: "No manual setup is required. Workit creates an AWS KMS-backed wallet for your account."
+  },
+  {
     question: "What is anchored on-chain versus off-chain?",
-    answer: "Evidence payloads can stay off-chain while decision hashes and receipt references are anchored on HCS."
+    answer: "Evidence payloads can remain off-chain while decision hashes and receipt references are anchored on HCS."
   },
   {
-    question: "How do social tasks work?",
-    answer: "Creators define verifiers for platforms like X, YouTube, and Discord, then Workit validates submitted evidence."
+    question: "How are rewards paid?",
+    answer: "Rewards are paid in Workit token based on quest payout rules."
   },
   {
-    question: "What wallets are supported?",
-    answer: "Workit creates an abstracted wallet after sign-in and can also link external wallets for advanced users."
+    question: "Can I trade rewards?",
+    answer: "Yes. Workit token rewards are transferable and tradable on Hedera DEXs."
   },
   {
-    question: "How does Workit prevent bots?",
-    answer: "It combines challenge checks, rate limits, proof validation rules, and optional Sybil-gating strategies."
+    question: "How do you prevent bots?",
+    answer: "Workit combines eligibility gates, rate controls, proof verification policies, and anti-Sybil checks."
   }
 ];
 
@@ -138,25 +148,25 @@ export function LandingPage() {
             Hedera Hello Future: Apex 2026
           </p>
           <h1 className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-            Proof-of-Activity quests, anchored on Hedera.
+            Proof-of-Activity quests, Hedera-native with Web2-like UX.
           </h1>
           <p className="max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Workit turns quests into auditable completion receipts with gasless UX, HCS-backed trust, and instant HTS points or NFT badge rewards.
+            Workit delivers sponsored gas flows, AWS KMS-backed user wallets, and HCS-anchored proof receipts, with payouts in tradable Workit token on Hedera.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Link href="/auth" className={buttonVariants({ size: "lg" })}>
               Launch App
             </Link>
             <Link href="#security" className={buttonVariants({ variant: "outline", size: "lg" })}>
-              View Demo Proof
+              View Sample Proof
             </Link>
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             {[
               "HCS anchored",
-              "HTS rewards",
-              "AWS KMS signing",
-              "Gasless via paymaster"
+              "Workit token rewards",
+              "AWS KMS wallets",
+              "Gasless UX"
             ].map(item => (
               <span key={item} className="rounded-full border border-border/70 bg-card/70 px-3 py-1">
                 {item}
@@ -249,9 +259,9 @@ export function LandingPage() {
         </div>
 
         <div className="grid gap-3">
-          <QuestCard title="Apex Builder Sprint: Ship + Share" points={350} chain="Hedera" difficulty="Medium" estimate="20 min" />
-          <QuestCard title="DeFi Starter: First Swap + Proof" points={180} chain="EVM" difficulty="Easy" estimate="8 min" />
-          <QuestCard title="Community Ops: Thread + Retention Loop" points={220} chain="Off-chain" difficulty="Medium" estimate="12 min" />
+          <QuestCard title="Apex Builder Sprint: Ship + Share" tokenReward="120 WORKIT" chain="Hedera" difficulty="Medium" estimate="20 min" />
+          <QuestCard title="DeFi Starter: First Swap + Proof" tokenReward="60 WORKIT" chain="EVM" difficulty="Easy" estimate="8 min" />
+          <QuestCard title="Community Ops: Thread + Retention Loop" tokenReward="80 WORKIT" chain="Off-chain" difficulty="Medium" estimate="12 min" />
         </div>
       </section>
 
@@ -278,25 +288,25 @@ export function LandingPage() {
         <div id="security" className="space-y-5">
           <h2 className="text-3xl font-semibold tracking-tight">Proof + Security</h2>
           <p className="text-muted-foreground">
-            Completion receipts are hashed and anchored to HCS while raw evidence can stay off-chain. That keeps proofs replayable without leaking user artifacts.
+            Completion receipts are hashed and anchored to HCS while raw evidence stays off-chain when needed. Receipts remain replayable for audits and dispute resolution.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Card className="border-border/70 bg-card/85">
               <CardContent className="space-y-2 p-4">
                 <Lock className="h-5 w-5 text-primary" aria-hidden="true" />
-                <p className="text-sm font-medium">AWS KMS-managed signing</p>
+                <p className="text-sm font-medium">User wallets are AWS KMS-backed</p>
               </CardContent>
             </Card>
             <Card className="border-border/70 bg-card/85">
               <CardContent className="space-y-2 p-4">
                 <Cloud className="h-5 w-5 text-primary" aria-hidden="true" />
-                <p className="text-sm font-medium">CloudTrail audit logs</p>
+                <p className="text-sm font-medium">Server-side signing and transaction orchestration</p>
               </CardContent>
             </Card>
             <Card className="border-border/70 bg-card/85 sm:col-span-2">
               <CardContent className="space-y-2 p-4">
                 <Database className="h-5 w-5 text-primary" aria-hidden="true" />
-                <p className="text-sm font-medium">Key policy controls with issuer/operator boundaries</p>
+                <p className="text-sm font-medium">CloudTrail audit logs and key-policy controls</p>
               </CardContent>
             </Card>
           </div>
