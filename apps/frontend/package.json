@@ -1,0 +1,16 @@
+{
+  "name": "@workit/frontend",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/index.tsx",
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "node -e \"console.log('frontend tests pending')\""
+  },
+  "dependencies": {
+    "@workit/auth": "workspace:*",
+    "@workit/common": "workspace:*"
+  }
+}
+
