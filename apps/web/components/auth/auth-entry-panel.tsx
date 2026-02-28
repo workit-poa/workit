@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Mail, UserRound } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
@@ -108,22 +109,23 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
   }
 
   return (
-    <Card className="w-full max-w-xl border-border/70 bg-card/92 shadow-2xl backdrop-blur">
-      <CardHeader className="space-y-3">
-        <p className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
-          {mode === "creator" ? "Creator Mode" : "Participant Mode"}
-        </p>
-        <CardTitle className="text-2xl sm:text-3xl">{heading}</CardTitle>
-        <CardDescription className="text-sm sm:text-base">{subheading}</CardDescription>
-      </CardHeader>
-
-      <CardContent className="space-y-5">
-        <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
-          <p className="text-sm text-muted-foreground">
-            No wallet needed. Workit creates a secure, abstracted wallet for you after sign-in.
+    <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: "easeOut" }}>
+      <Card className="w-full max-w-xl border-border/70 bg-card/92 shadow-2xl backdrop-blur">
+        <CardHeader className="space-y-3">
+          <p className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+            {mode === "creator" ? "Creator Mode" : "Participant Mode"}
           </p>
-        </div>
+          <CardTitle className="text-2xl sm:text-3xl">{heading}</CardTitle>
+          <CardDescription className="text-sm sm:text-base">{subheading}</CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-5">
+          <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
+            <p className="text-sm text-muted-foreground">
+              No wallet needed. Workit creates a secure, abstracted wallet for you after sign-in.
+            </p>
+          </div>
 
         <section className="space-y-3" aria-label="Email OTP sign-in">
           <div className="space-y-2">
@@ -172,24 +174,44 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
           </span>
         </div>
 
-        <section className="grid gap-2 sm:grid-cols-3" aria-label="OAuth sign-in">
+        <motion.section
+          className="grid gap-2 sm:grid-cols-3"
+          aria-label="OAuth sign-in"
+          initial="hidden"
+          animate="show"
+          variants={{
+            hidden: {},
+            show: {
+              transition: {
+                staggerChildren: 0.06
+              }
+            }
+          }}
+        >
           {([
             ["google", "Google"],
             ["x", "X"],
             ["discord", "Discord"]
           ] as const).map(([provider, label]) => (
-            <Button
+            <motion.div
               key={provider}
-              type="button"
-              variant="outline"
-              onClick={() => void onOAuthSignIn(provider)}
-              disabled={oauthLoading !== null}
+              variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              whileHover={{ y: -1 }}
             >
-              {oauthLoading === provider ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              <span className={oauthLoading === provider ? "ml-2" : ""}>{label}</span>
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void onOAuthSignIn(provider)}
+                disabled={oauthLoading !== null}
+                className="w-full"
+              >
+                {oauthLoading === provider ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+                <span className={oauthLoading === provider ? "ml-2" : ""}>{label}</span>
+              </Button>
+            </motion.div>
           ))}
-        </section>
+        </motion.section>
 
         {error ? (
           <Alert variant="destructive">
@@ -214,7 +236,8 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
             Back to landing page
           </Link>
         </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }

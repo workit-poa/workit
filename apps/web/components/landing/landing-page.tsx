@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { motion } from "framer-motion";
 import {
   ShieldCheck,
   Coins,
@@ -95,6 +98,13 @@ const faqs = [
 ];
 
 export function LandingPage() {
+  const fadeUp = {
+    initial: { opacity: 0, y: 20 },
+    whileInView: { opacity: 1, y: 0 },
+    viewport: { once: true, amount: 0.25 },
+    transition: { duration: 0.45, ease: "easeOut" }
+  } as const;
+
   return (
     <main className="relative overflow-x-hidden bg-background">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_0%,hsl(var(--accent))_0%,transparent_35%),radial-gradient(circle_at_88%_20%,hsl(var(--secondary))_0%,transparent_32%),radial-gradient(circle_at_50%_100%,hsl(var(--muted))_0%,transparent_42%)]" />
@@ -123,7 +133,7 @@ export function LandingPage() {
       </header>
 
       <section id="product" className="mx-auto grid w-full max-w-6xl gap-10 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.1fr,0.9fr] lg:pt-24">
-        <div className="space-y-6 animate-fade-up">
+        <motion.div className="space-y-6" {...fadeUp}>
           <p className="inline-flex rounded-full border border-border/80 bg-card/80 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Hedera Hello Future: Apex 2026
           </p>
@@ -153,43 +163,64 @@ export function LandingPage() {
               </span>
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        <Card className="self-start border-border/70 bg-card/80 shadow-xl animate-fade-up">
-          <CardHeader>
-            <CardTitle className="text-lg">Featured Quest Flow</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {howItWorks.slice(0, 3).map((step, idx) => (
-              <div key={step} className="flex gap-3 rounded-xl border border-border/70 bg-background/80 p-3">
-                <span className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                  {idx + 1}
-                </span>
-                <p className="text-sm text-muted-foreground">{step}</p>
-              </div>
-            ))}
-            <Link href="/auth" className={cn(buttonVariants({ variant: "secondary" }), "w-full") }>
-              Start a Quest
-              <ArrowRight className="ml-1 h-4 w-4" aria-hidden="true" />
-            </Link>
-          </CardContent>
-        </Card>
+        <motion.div {...fadeUp}>
+          <Card className="self-start border-border/70 bg-card/80 shadow-xl">
+            <CardHeader>
+              <CardTitle className="text-lg">Featured Quest Flow</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {howItWorks.slice(0, 3).map((step, idx) => (
+                <div key={step} className="flex gap-3 rounded-xl border border-border/70 bg-background/80 p-3">
+                  <span className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                    {idx + 1}
+                  </span>
+                  <p className="text-sm text-muted-foreground">{step}</p>
+                </div>
+              ))}
+              <Link href="/auth" className={cn(buttonVariants({ variant: "secondary" }), "w-full")}>
+                Start a Quest
+                <ArrowRight className="ml-1 h-4 w-4" aria-hidden="true" />
+              </Link>
+            </CardContent>
+          </Card>
+        </motion.div>
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:px-6">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 animate-fade-up">
+        <motion.div
+          className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.2 }}
+          variants={{
+            hidden: {},
+            show: {
+              transition: {
+                staggerChildren: 0.08
+              }
+            }
+          }}
+        >
           {valueProps.map(item => (
-            <Card key={item.title} className="border-border/70 bg-card/85 transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
-              <CardHeader className="space-y-2">
-                <item.icon className="h-5 w-5 text-primary" aria-hidden="true" />
-                <CardTitle className="text-base leading-snug">{item.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">{item.body}</p>
-              </CardContent>
-            </Card>
+            <motion.div
+              key={item.title}
+              variants={{ hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+            >
+              <Card className="border-border/70 bg-card/85 transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+                <CardHeader className="space-y-2">
+                  <item.icon className="h-5 w-5 text-primary" aria-hidden="true" />
+                  <CardTitle className="text-base leading-snug">{item.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">{item.body}</p>
+                </CardContent>
+              </Card>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </section>
 
       <section id="developers" className="mx-auto w-full max-w-6xl px-4 pb-20 sm:px-6">
