@@ -44,9 +44,9 @@ importers:
       '@workit/common':
         specifier: workspace:*
         version: link:../../libs/common
-      '@workit/wallet':
+      '@workit/hedera-kms-wallet':
         specifier: workspace:*
-        version: link:../../libs/wallet
+        version: link:../../libs/hedera-kms-wallet
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -102,6 +102,9 @@ importers:
       '@workit/common':
         specifier: workspace:*
         version: link:../common
+      '@workit/hedera-kms-wallet':
+        specifier: workspace:*
+        version: link:../hedera-kms-wallet
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -123,20 +126,20 @@ importers:
 
   libs/common: {}
 
-  libs/hedera:
+  libs/hedera-kms-wallet:
     dependencies:
+      '@aws-sdk/client-kms':
+        specifier: ^3.900.0
+        version: 3.1000.0
+      '@hashgraph/sdk':
+        specifier: ^2.62.0
+        version: 2.80.0(bn.js@5.2.1)(react-native@0.84.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))
       '@workit/common':
         specifier: workspace:*
         version: link:../common
-
-  libs/wallet:
-    dependencies:
-      '@workit/common':
-        specifier: workspace:*
-        version: link:../common
-      '@workit/hedera':
-        specifier: workspace:*
-        version: link:../hedera
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.4.7
 
 packages:
 

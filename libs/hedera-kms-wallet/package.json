@@ -1,5 +1,5 @@
 {
-  "name": "@workit/wallet",
+  "name": "@workit/hedera-kms-wallet",
   "version": "0.1.0",
   "private": true,
   "main": "src/index.ts",
@@ -7,11 +7,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('wallet tests pending')\""
+    "test": "node --import tsx --test src/*.test.ts",
+    "demo:kms-hedera": "tsx src/demo/kms-hedera-demo.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.900.0",
+    "@hashgraph/sdk": "^2.62.0",
     "@workit/common": "workspace:*",
-    "@workit/hedera": "workspace:*"
+    "dotenv": "^16.4.5"
   }
 }
-

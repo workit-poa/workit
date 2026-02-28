@@ -7,8 +7,7 @@ Nx + pnpm monorepo for a Hedera-focused hackathon stack with a unified fullstack
 - `apps/web`: Fullstack Next.js app (UI + API routes)
 - `libs/common`: Shared DTOs and utilities
 - `libs/auth`: Authentication domain logic
-- `libs/wallet`: Wallet domain logic
-- `libs/hedera`: Hedera SDK integration layer
+- `libs/hedera-kms-wallet`: AWS KMS-backed Hedera wallet provisioning/signing integration
 - `infra/terraform`: Infrastructure as code
 - `docs`: Project documentation
 

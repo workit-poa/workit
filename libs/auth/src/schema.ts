@@ -11,6 +11,7 @@ export const users = pgTable(
     twitterId: varchar("twitter_id", { length: 255 }),
     hederaAccountId: varchar("hedera_account_id", { length: 64 }),
     kmsKeyId: varchar("kms_key_id", { length: 255 }),
+    hederaPublicKeyFingerprint: varchar("hedera_public_key_fingerprint", { length: 64 }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
   },
@@ -46,4 +47,3 @@ export const refreshTokens = pgTable(
 
 export type UserRow = typeof users.$inferSelect;
 export type RefreshTokenRow = typeof refreshTokens.$inferSelect;
-

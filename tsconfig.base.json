@@ -19,13 +19,9 @@
       "@workit/auth": [
         "libs/auth/src/index.ts"
       ],
-      "@workit/wallet": [
-        "libs/wallet/src/index.ts"
-      ],
-      "@workit/hedera": [
-        "libs/hedera/src/index.ts"
+      "@workit/hedera-kms-wallet": [
+        "libs/hedera-kms-wallet/src/index.ts"
       ]
     }
   }
 }
-

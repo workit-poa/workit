@@ -16,6 +16,7 @@
     "affected:test": "nx affected -t test",
     "format": "prettier --write .",
     "graph": "nx graph",
+    "demo:kms-hedera": "pnpm --filter @workit/hedera-kms-wallet demo:kms-hedera",
     "drizzle:generate": "drizzle-kit generate",
     "drizzle:migrate": "drizzle-kit migrate"
   },

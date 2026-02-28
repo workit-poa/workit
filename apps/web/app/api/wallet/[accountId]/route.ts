@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { createWalletService } from "@workit/wallet";
-
-const walletService = createWalletService();
+import { getWalletDetails } from "@workit/hedera-kms-wallet";
 
 interface WalletRouteParams {
   params: Promise<{
@@ -11,7 +9,7 @@ interface WalletRouteParams {
 
 export async function GET(_request: Request, { params }: WalletRouteParams) {
   const { accountId } = await params;
-  const wallet = await walletService.getWalletDetails(accountId);
+  const network = process.env.HEDERA_NETWORK === "mainnet" ? "mainnet" : "testnet";
+  const wallet = getWalletDetails(accountId, network);
   return NextResponse.json(wallet);
 }
-

@@ -75,19 +75,19 @@ async function createUserWithManagedWallet(values: Pick<UserRow, "email" | "pass
 
   try {
     const provisioned = await provisionManagedWalletForUser(createdUser.id);
-    if (!provisioned) return createdUser;
 
     const [updatedUser] = await db
       .update(users)
       .set({
         hederaAccountId: provisioned.hederaAccountId,
         kmsKeyId: provisioned.kmsKeyId,
+        hederaPublicKeyFingerprint: provisioned.hederaPublicKeyFingerprint,
         updatedAt: new Date()
       })
       .where(eq(users.id, createdUser.id))
       .returning();
 
-    return updatedUser ?? createdUser;
+    return updatedUser;
   } catch (error) {
     await db.delete(users).where(eq(users.id, createdUser.id));
     throw error;

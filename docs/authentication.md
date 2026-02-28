@@ -6,7 +6,7 @@ Unified `users` table (Drizzle schema `users`) supports:
 
 - Email/password (`email`, `password_hash`)
 - OAuth provider IDs (`google_id`, `facebook_id`, `twitter_id`)
-- Hedera linkage (`hedera_account_id`, `kms_key_id`)
+- Hedera linkage (`hedera_account_id`, `kms_key_id`, `hedera_public_key_fingerprint`)
 
 Every account uses one internal UUID (`id`).
 
@@ -28,19 +28,17 @@ Refresh tokens are persisted hashed in `refresh_tokens` to avoid storing plainte
 
 ## Wallet Provisioning (AWS KMS + Hedera)
 
-- On new user creation (email signup or first-time OAuth), backend provisions a managed wallet.
+- On new user creation (email signup or first-time OAuth), backend provisions a managed wallet via `@workit/hedera-kms-wallet`.
 - A dedicated AWS KMS asymmetric key is created per user (`ECC_SECG_P256K1`, `SIGN_VERIFY`).
 - Hedera account is created with the derived ECDSA(secp256k1) public key.
-- Persisted on `users`: `hedera_account_id` and `kms_key_id` (ARN/KeyId).
+- Persisted on `users`: `hedera_account_id`, `kms_key_id` (ARN/KeyId), and `hedera_public_key_fingerprint`.
 - Private keys never leave AWS KMS; signing is performed through `kms:Sign`.
 
 Required environment variables:
 
-- `HEDERA_WALLET_PROVISIONING_ENABLED` (default `true`)
 - `AWS_REGION`
 - `HEDERA_NETWORK` (`testnet` or `mainnet`)
-- `HEDERA_OPERATOR_ID`
-- `HEDERA_OPERATOR_KEY`
+- `OPERATOR_ID` / `OPERATOR_KEY` (or backward-compatible `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY`)
 - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR` (default `1`)
 - `HEDERA_KMS_CREATE_ALIAS` (default `true`)
 - `HEDERA_KMS_ALIAS_PREFIX` (default `alias/workit-user`)
