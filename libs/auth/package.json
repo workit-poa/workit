@@ -7,11 +7,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('auth tests pending')\""
+    "test": "node --env-file=../../.env.test --import tsx --test src/*.test.ts"
   },
-  "devDependencies": {
-    "@types/bcryptjs": "^2.4.6"
-  },
+  "devDependencies": {},
   "dependencies": {
     "@workit/common": "workspace:*",
     "bcryptjs": "^2.4.3",

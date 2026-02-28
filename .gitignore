@@ -2,7 +2,8 @@ node_modules
 dist
 .nx
 .turbo
-.env
+.env*
+!.env.example
 .DS_Store
 coverage
 *.log
