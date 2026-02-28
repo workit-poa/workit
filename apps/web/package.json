@@ -1,5 +1,5 @@
 {
-  "name": "@workit/frontend",
+  "name": "@workit/web",
   "private": true,
   "version": "0.1.0",
   "scripts": {
@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('frontend tests pending')\""
+    "test": "node -e \"console.log('web tests pending')\""
   },
   "dependencies": {
     "@workit/auth": "workspace:*",

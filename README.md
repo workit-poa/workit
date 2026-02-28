@@ -4,7 +4,7 @@ Nx + pnpm monorepo for a Hedera-focused hackathon stack with a unified fullstack
 
 ## Structure
 
-- `apps/frontend`: Fullstack Next.js app (UI + API routes)
+- `apps/web`: Fullstack Next.js app (UI + API routes)
 - `libs/common`: Shared DTOs and utilities
 - `libs/auth`: Authentication domain logic
 - `libs/wallet`: Wallet domain logic
