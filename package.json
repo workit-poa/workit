@@ -18,7 +18,8 @@
     "graph": "nx graph",
     "demo:kms-hedera": "pnpm --filter @workit/hedera-kms-wallet demo:kms-hedera",
     "drizzle:generate": "drizzle-kit generate",
-    "drizzle:migrate": "drizzle-kit migrate"
+    "drizzle:migrate": "drizzle-kit migrate",
+    "db:generate:migrate": "pnpm run drizzle:generate && pnpm run drizzle:migrate"
   },
   "devDependencies": {
     "@nx/js": "^21.3.0",

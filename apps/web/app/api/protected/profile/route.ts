@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUserFromBearer } from "@workit/auth";
+import { getToken } from "next-auth/jwt";
 
 export async function GET(request: NextRequest) {
-  const user = await getAuthenticatedUserFromBearer(request.headers.get("authorization"));
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_ACCESS_TOKEN_SECRET
+  });
+  const user = token?.workitUser as { id: string; email: string | null; hederaAccountId: string | null; createdAt: string } | undefined;
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -12,4 +16,3 @@ export async function GET(request: NextRequest) {
     message: "Protected resource access granted"
   });
 }
-

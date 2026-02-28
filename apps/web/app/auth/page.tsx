@@ -8,7 +8,9 @@ type AuthPageProps = {
 export default async function AuthPage({ searchParams }: AuthPageProps) {
   const params = await searchParams;
   const rawMode = params?.mode;
+  const rawError = params?.error;
   const mode = (Array.isArray(rawMode) ? rawMode[0] : rawMode) === "creator" ? "creator" : "participant";
+  const oauthError = Array.isArray(rawError) ? rawError[0] : rawError;
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top_left,hsl(var(--accent))_0%,transparent_40%),radial-gradient(circle_at_bottom_right,hsl(var(--secondary))_0%,transparent_45%)] px-4 py-10">
@@ -17,7 +19,7 @@ export default async function AuthPage({ searchParams }: AuthPageProps) {
           Back home
         </Link>
       </div>
-      <AuthEntryPanel mode={mode} />
+      <AuthEntryPanel mode={mode} oauthError={oauthError} />
     </main>
   );
 }

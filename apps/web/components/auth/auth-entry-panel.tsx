@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 import { useFormik } from "formik";
 import * as yup from "yup";
 import { CheckCircle2, Loader2, Mail, UserRound } from "lucide-react";
@@ -12,14 +13,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
-import { sendEmailOtp, signInWithOAuth, verifyEmailOtp } from "../../lib/demo-auth";
 import { useAuth } from "./auth-provider";
-
-type OauthProvider = "google" | "x" | "discord";
-type AuthRole = "participant" | "creator";
 
 type AuthEntryPanelProps = {
   mode: "participant" | "creator";
+  oauthError?: string | null;
 };
 
 const emailSchema = yup.object({
@@ -30,23 +28,26 @@ const codeSchema = yup.object({
   code: yup.string().trim().matches(/^\d{6}$/, "Enter the 6-digit code.").required("Verification code is required.")
 });
 
-export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
+export function AuthEntryPanel({ mode, oauthError }: AuthEntryPanelProps) {
   const router = useRouter();
-  const { setSession } = useAuth();
+  const { session, hydrated } = useAuth();
 
   const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [oauthLoading, setOauthLoading] = useState<OauthProvider | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(oauthError || null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [demoCode, setDemoCode] = useState<string | null>(null);
+  const [debugCode, setDebugCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (hydrated && session) {
+      router.replace("/app");
+    }
+  }, [hydrated, router, session]);
 
   const heading = mode === "creator" ? "Create your creator workspace" : "Launch your Workit account";
   const subheading =
     mode === "creator"
-      ? "Get into quest builder, budgets, and reward controls in one secure flow."
-      : "Start completing quests with gasless, wallet-abstracted onboarding.";
-
-  const role = useMemo<AuthRole>(() => (mode === "creator" ? "creator" : "participant"), [mode]);
+      ? "Use email OTP or OAuth to access quest builder, budgets, and reward controls."
+      : "Use email OTP or OAuth to start completing quests with your managed Hedera wallet.";
 
   const emailFormik = useFormik({
     initialValues: { email: "" },
@@ -54,13 +55,29 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
     onSubmit: async values => {
       setError(null);
       setNotice(null);
-      setDemoCode(null);
+      setDebugCode(null);
 
       try {
-        const response = await sendEmailOtp(values.email);
-        setChallengeId(response.challengeId);
-        setDemoCode(response.demoCode);
-        setNotice("Verification code sent. In this demo, use the code below.");
+        const response = await fetch("/api/auth/otp/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email: values.email })
+        });
+        const payload = (await response.json()) as {
+          challengeId?: string;
+          expiresAt?: string;
+          debugCode?: string;
+          error?: string;
+        };
+
+        if (!response.ok || !payload.challengeId) {
+          throw new Error(payload.error || "Could not send verification code.");
+        }
+
+        setChallengeId(payload.challengeId);
+        setDebugCode(payload.debugCode || null);
+        setNotice("Verification code sent. Check your inbox.");
       } catch (submissionError) {
         setError(submissionError instanceof Error ? submissionError.message : "Could not send code.");
       }
@@ -78,16 +95,16 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
 
       setError(null);
       setNotice(null);
-
       try {
-        const session = await verifyEmailOtp({
+        const result = await signIn("otp", {
           challengeId,
           email: emailFormik.values.email,
           code: values.code,
-          role
+          redirect: false
         });
-
-        setSession(session);
+        if (!result || result.error) {
+          throw new Error(result?.error || "Code verification failed.");
+        }
         router.push("/app");
       } catch (submissionError) {
         setError(submissionError instanceof Error ? submissionError.message : "Code verification failed.");
@@ -95,20 +112,9 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
     }
   });
 
-  async function onOAuthSignIn(provider: OauthProvider) {
+  async function startOAuth(provider: "google" | "x" | "discord") {
     setError(null);
-    setNotice(null);
-    setOauthLoading(provider);
-
-    try {
-      const session = await signInWithOAuth({ provider, role });
-      setSession(session);
-      router.push("/app");
-    } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "OAuth sign-in failed.");
-    } finally {
-      setOauthLoading(null);
-    }
+    await signIn(provider, { callbackUrl: "/app" });
   }
 
   return (
@@ -126,7 +132,7 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
         <CardContent className="space-y-5">
           <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
             <p className="text-sm text-muted-foreground">
-              No wallet needed — Workit creates a secure, AWS KMS-backed wallet for your account. You&apos;ll use it to submit proofs and claim rewards.
+              Sessions are server-authenticated with short-lived access tokens and rotating httpOnly refresh cookies.
             </p>
           </div>
 
@@ -199,9 +205,9 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
               ) : null}
             </form>
 
-            {demoCode ? (
+            {debugCode ? (
               <p className="text-xs text-muted-foreground">
-                Demo code: <span className="font-semibold text-foreground">{demoCode}</span>
+                Dev code: <span className="font-semibold text-foreground">{debugCode}</span>
               </p>
             ) : null}
           </section>
@@ -213,44 +219,17 @@ export function AuthEntryPanel({ mode }: AuthEntryPanelProps) {
             </span>
           </div>
 
-          <motion.section
-            className="grid gap-2 sm:grid-cols-3"
-            aria-label="OAuth sign-in"
-            initial="hidden"
-            animate="show"
-            variants={{
-              hidden: {},
-              show: {
-                transition: {
-                  staggerChildren: 0.06
-                }
-              }
-            }}
-          >
-            {([
-              ["google", "Google"],
-              ["x", "X"],
-              ["discord", "Discord"]
-            ] as const).map(([provider, label]) => (
-              <motion.div
-                key={provider}
-                variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                whileHover={{ y: -1 }}
-              >
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void onOAuthSignIn(provider)}
-                  disabled={oauthLoading !== null}
-                  className="w-full"
-                >
-                  {oauthLoading === provider ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                  <span className={oauthLoading === provider ? "ml-2" : ""}>{label}</span>
-                </Button>
-              </motion.div>
-            ))}
-          </motion.section>
+          <section className="grid gap-2 sm:grid-cols-3" aria-label="OAuth sign-in">
+            <Button type="button" variant="outline" onClick={() => startOAuth("google")} className="w-full">
+              Google
+            </Button>
+            <Button type="button" variant="outline" onClick={() => startOAuth("x")} className="w-full">
+              X
+            </Button>
+            <Button type="button" variant="outline" onClick={() => startOAuth("discord")} className="w-full">
+              Discord
+            </Button>
+          </section>
 
           {error ? (
             <Alert variant="destructive">

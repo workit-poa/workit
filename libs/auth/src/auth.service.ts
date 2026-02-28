@@ -1,21 +1,28 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import crypto from "node:crypto";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { SessionPayload } from "@workit/common";
 import { getDb } from "./db";
 import { getAuthConfig, msFromMinutes, msFromDays } from "./config";
 import { hashPassword, verifyPassword } from "./password";
 import { createAccessToken, hashRefreshToken, newRefreshTokenValue, verifyAccessToken } from "./token";
-import { refreshTokens, users, type UserRow } from "./schema";
+import { emailOtpChallenges, refreshTokens, users, type UserRow } from "./schema";
 import { provisionManagedWalletForUser } from "./wallet-provisioning";
 import {
   EmailLoginInput,
+  EmailOtpRequestInput,
+  EmailOtpVerifyInput,
   EmailRegistrationInput,
   OAuthCallbackInput,
   validateEmailLoginInput,
+  validateEmailOtpRequestInput,
+  validateEmailOtpVerifyInput,
   validateEmailRegistrationInput,
   validateOAuthInput
 } from "./validation";
 
-type OAuthProvider = "google" | "facebook" | "twitter";
+type OAuthProvider = "google" | "x" | "discord";
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
 
 export interface AuthSessionContext {
   ipAddress?: string;
@@ -68,7 +75,9 @@ async function issueTokensForUser(user: UserRow, ctx: AuthSessionContext): Promi
   };
 }
 
-async function createUserWithManagedWallet(values: Pick<UserRow, "email" | "passwordHash" | "googleId" | "facebookId" | "twitterId">) {
+async function createUserWithManagedWallet(
+  values: Pick<UserRow, "email" | "passwordHash" | "googleId" | "facebookId" | "twitterId" | "discordId">
+) {
   const db = getDb();
   const [createdUser] = await db.insert(users).values(values).returning();
   if (!createdUser) throw new Error("Failed to create account");
@@ -94,6 +103,134 @@ async function createUserWithManagedWallet(values: Pick<UserRow, "email" | "pass
   }
 }
 
+function hashOtpCode(challengeId: string, code: string) {
+  return crypto.createHash("sha256").update(`${challengeId}:${code}`).digest("hex");
+}
+
+function generateOtpCode() {
+  return `${crypto.randomInt(100000, 999999)}`;
+}
+
+async function dispatchOtpCode(email: string, code: string) {
+  const webhookUrl = process.env.EMAIL_OTP_WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.info(`[workit-auth] OTP for ${email}: ${code}`);
+    return;
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(process.env.EMAIL_OTP_WEBHOOK_BEARER
+        ? { Authorization: `Bearer ${process.env.EMAIL_OTP_WEBHOOK_BEARER}` }
+        : {})
+    },
+    body: JSON.stringify({
+      to: email,
+      code,
+      ttlMinutes: Math.round(OTP_TTL_MS / 60_000)
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to send verification code");
+  }
+}
+
+export async function requestEmailOtpChallenge(input: EmailOtpRequestInput, ctx: AuthSessionContext) {
+  const db = getDb();
+  const parsed = validateEmailOtpRequestInput(input);
+  const code = generateOtpCode();
+  const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+
+  const [challenge] = await db
+    .insert(emailOtpChallenges)
+    .values({
+      email: parsed.email,
+      codeHash: "",
+      expiresAt,
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent
+    })
+    .returning({ id: emailOtpChallenges.id });
+
+  if (!challenge) {
+    throw new Error("Failed to create OTP challenge");
+  }
+
+  await db
+    .update(emailOtpChallenges)
+    .set({ codeHash: hashOtpCode(challenge.id, code) })
+    .where(eq(emailOtpChallenges.id, challenge.id));
+
+  await dispatchOtpCode(parsed.email, code);
+
+  return {
+    challengeId: challenge.id,
+    expiresAt,
+    ...(process.env.NODE_ENV !== "production" ? { debugCode: code } : {})
+  };
+}
+
+export async function verifyEmailOtpChallenge(input: EmailOtpVerifyInput, ctx: AuthSessionContext) {
+  const db = getDb();
+  const parsed = validateEmailOtpVerifyInput(input);
+
+  const [challenge] = await db
+    .select()
+    .from(emailOtpChallenges)
+    .where(and(eq(emailOtpChallenges.id, parsed.challengeId), eq(emailOtpChallenges.email, parsed.email)))
+    .limit(1);
+  if (!challenge || challenge.consumedAt || challenge.expiresAt <= new Date()) {
+    throw new Error("This verification code is invalid or expired");
+  }
+  if (challenge.attemptCount >= OTP_MAX_ATTEMPTS) {
+    throw new Error("Too many invalid attempts");
+  }
+
+  const expectedHash = Buffer.from(challenge.codeHash, "hex");
+  const actualHash = Buffer.from(hashOtpCode(challenge.id, parsed.code), "hex");
+  const isValid =
+    expectedHash.length === actualHash.length && crypto.timingSafeEqual(expectedHash, actualHash) && challenge.expiresAt > new Date();
+
+  if (!isValid) {
+    const attempts = challenge.attemptCount + 1;
+    await db
+      .update(emailOtpChallenges)
+      .set({
+        attemptCount: sql<number>`${emailOtpChallenges.attemptCount} + 1`,
+        consumedAt: attempts >= OTP_MAX_ATTEMPTS ? new Date() : null
+      })
+      .where(eq(emailOtpChallenges.id, challenge.id));
+    throw new Error("Invalid verification code");
+  }
+
+  await db
+    .update(emailOtpChallenges)
+    .set({
+      consumedAt: new Date(),
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent
+    })
+    .where(eq(emailOtpChallenges.id, challenge.id));
+
+  const [existing] = await db.select().from(users).where(eq(users.email, parsed.email)).limit(1);
+  const user =
+    existing ??
+    (await createUserWithManagedWallet({
+      email: parsed.email,
+      passwordHash: null,
+      googleId: null,
+      facebookId: null,
+      twitterId: null,
+      discordId: null
+    }));
+
+  const tokens = await issueTokensForUser(user, ctx);
+  return { user: toAuthUser(user), tokens };
+}
+
 export async function registerWithEmailPassword(input: EmailRegistrationInput, ctx: AuthSessionContext) {
   const db = getDb();
   const parsed = validateEmailRegistrationInput(input);
@@ -107,7 +244,8 @@ export async function registerWithEmailPassword(input: EmailRegistrationInput, c
     passwordHash: await hashPassword(parsed.password),
     googleId: null,
     facebookId: null,
-    twitterId: null
+    twitterId: null,
+    discordId: null
   });
 
   const tokens = await issueTokensForUser(user, ctx);
@@ -139,8 +277,8 @@ export async function authenticateWithOAuth(input: OAuthCallbackInput, ctx: Auth
   const [userByProvider] =
     parsed.provider === "google"
       ? await db.select().from(users).where(eq(users.googleId, parsed.providerUserId)).limit(1)
-      : parsed.provider === "facebook"
-        ? await db.select().from(users).where(eq(users.facebookId, parsed.providerUserId)).limit(1)
+      : parsed.provider === "discord"
+        ? await db.select().from(users).where(eq(users.discordId, parsed.providerUserId)).limit(1)
         : await db.select().from(users).where(eq(users.twitterId, parsed.providerUserId)).limit(1);
 
   if (userByProvider) {
@@ -155,8 +293,8 @@ export async function authenticateWithOAuth(input: OAuthCallbackInput, ctx: Auth
           .update(users)
           .set({
             googleId: parsed.provider === "google" ? parsed.providerUserId : userByEmail.googleId,
-            facebookId: parsed.provider === "facebook" ? parsed.providerUserId : userByEmail.facebookId,
-            twitterId: parsed.provider === "twitter" ? parsed.providerUserId : userByEmail.twitterId,
+            discordId: parsed.provider === "discord" ? parsed.providerUserId : userByEmail.discordId,
+            twitterId: parsed.provider === "x" ? parsed.providerUserId : userByEmail.twitterId,
             updatedAt: new Date()
           })
           .where(eq(users.id, userByEmail.id))
@@ -166,8 +304,9 @@ export async function authenticateWithOAuth(input: OAuthCallbackInput, ctx: Auth
         email,
         passwordHash: null,
         googleId: parsed.provider === "google" ? parsed.providerUserId : null,
-        facebookId: parsed.provider === "facebook" ? parsed.providerUserId : null,
-        twitterId: parsed.provider === "twitter" ? parsed.providerUserId : null
+        facebookId: null,
+        twitterId: parsed.provider === "x" ? parsed.providerUserId : null,
+        discordId: parsed.provider === "discord" ? parsed.providerUserId : null
       });
   if (!linkedUser) throw new Error("Failed to link OAuth account");
 

@@ -12,6 +12,9 @@ import { useAuth } from "../auth/auth-provider";
 export function AppShell() {
   const router = useRouter();
   const { session, hydrated, signOut } = useAuth();
+  const displayName = (session?.user.email?.split("@")[0] || "Workit User")
+    .replace(/[._-]/g, " ")
+    .replace(/\b\w/g, char => char.toUpperCase());
 
   useEffect(() => {
     if (hydrated && !session) {
@@ -40,14 +43,14 @@ export function AppShell() {
       >
         <div>
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Workit app shell</p>
-          <h1 className="text-3xl font-semibold tracking-tight">Welcome, {session.displayName}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Welcome, {displayName}</h1>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => router.push("/")}>Landing</Button>
           <Button
             variant="destructive"
             onClick={() => {
-              signOut();
+              void signOut();
               router.replace("/auth");
             }}
           >
@@ -63,10 +66,9 @@ export function AppShell() {
               <CardTitle className="text-lg">Identity</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p><span className="font-medium text-foreground">Email:</span> {session.email}</p>
-              <p><span className="font-medium text-foreground">Provider:</span> {session.provider}</p>
-              <p><span className="font-medium text-foreground">Role:</span> {session.role}</p>
-              <p><span className="font-medium text-foreground">Signed in:</span> {new Date(session.signedInAt).toLocaleString()}</p>
+              <p><span className="font-medium text-foreground">User ID:</span> {session.user.id}</p>
+              <p><span className="font-medium text-foreground">Email:</span> {session.user.email || "Not available"}</p>
+              <p><span className="font-medium text-foreground">Account created:</span> {new Date(session.user.createdAt).toLocaleString()}</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -78,7 +80,9 @@ export function AppShell() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" /> HCS receipts + Workit token payouts via HTS</p>
-              <p className="inline-flex items-center gap-2"><Wallet className="h-4 w-4 text-primary" aria-hidden="true" /> Abstracted wallet: {session.abstractedWalletId}</p>
+              <p className="inline-flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-primary" aria-hidden="true" /> Managed wallet: {session.user.hederaAccountId || "Provisioning pending"}
+              </p>
               <p>KMS-backed wallet signing is orchestrated server-side for submissions, claims, and sponsored transactions.</p>
               <p>This is a minimal post-auth shell ready for quest feeds, creator tools, and proof history modules.</p>
               <Link href="/" className="text-foreground underline underline-offset-4">Return to marketing site</Link>

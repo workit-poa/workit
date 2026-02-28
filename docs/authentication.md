@@ -5,18 +5,18 @@
 Unified `users` table (Drizzle schema `users`) supports:
 
 - Email/password (`email`, `password_hash`)
-- OAuth provider IDs (`google_id`, `facebook_id`, `twitter_id`)
+- OAuth provider IDs (`google_id`, `twitter_id` for X, `discord_id`)
 - Hedera linkage (`hedera_account_id`, `kms_key_id`, `hedera_public_key_fingerprint`)
 
 Every account uses one internal UUID (`id`).
 
 ## Session Model
 
-- Access token: JWT (HS256), short-lived (`AUTH_ACCESS_TOKEN_TTL_MINUTES`, default 15m)
-- Refresh token: opaque random token in HttpOnly cookie (`/api/auth` path)
-- Refresh rotation: old refresh token revoked when exchanged, new one issued
+Session and cookies are handled by NextAuth (`/api/auth/[...nextauth]`) using JWT session strategy.
+`AuthProvider` in the web app reads NextAuth session state client-side.
 
-Refresh tokens are persisted hashed in `refresh_tokens` to avoid storing plaintext.
+Legacy refresh token tables and endpoints remain in the auth domain for backward compatibility.
+Email OTP challenges are stored in `email_otp_challenges` with hashed codes, attempt limits, and expiration.
 
 ## Security Controls
 
@@ -53,6 +53,15 @@ Note: AWS automatic rotation is not available for asymmetric KMS keys (`ECC_SECG
 
 ## OAuth Notes
 
-- Google: server-side ID token signature verification via Google JWKS.
-- Facebook/X(Twitter): route scaffolding exists; by default these require full provider verification implementation.
-- For local demos only, `OAUTH_TRUSTED_PROFILE_MODE=true` can allow trusted-profile input for Facebook/Twitter endpoints.
+- OAuth providers are handled by NextAuth providers:
+  - Google
+  - X (custom OIDC provider with PKCE/state)
+  - Discord
+- On successful OAuth callback, NextAuth callback maps provider identity to internal user via `authenticateWithOAuth`.
+- Required env vars include:
+  - `NEXTAUTH_SECRET`
+  - `NEXTAUTH_URL`
+  - `AUTH_PUBLIC_BASE_URL`
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+  - `X_CLIENT_ID`, `X_CLIENT_SECRET`
+  - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`

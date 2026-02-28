@@ -23,13 +23,8 @@ pnpm dev
 
 ## Auth API
 
-- `POST /api/auth/register`: email/password registration.
-- `POST /api/auth/login`: email/password login.
-- `POST /api/auth/oauth/google`: Google OAuth via ID token verification.
-- `POST /api/auth/oauth/facebook` and `POST /api/auth/oauth/twitter`: available behind trusted profile mode.
-- `POST /api/auth/refresh`: refresh token rotation (HttpOnly cookie).
-- `POST /api/auth/logout`: revoke current refresh token.
-- `GET /api/auth/me`: fetch current user from Bearer access token.
+- `POST /api/auth/otp/request`: request email OTP challenge.
+- `GET|POST /api/auth/[...nextauth]`: NextAuth session, OTP credentials sign-in, and OAuth providers (Google, X, Discord).
 - `GET /api/protected/profile`: middleware-protected sample route.
 
 ## Useful Commands
@@ -39,7 +34,7 @@ pnpm dev
 - `pnpm affected:build`: Build only affected projects
 - `pnpm graph`: Visualize dependency graph
 
-## Workit Landing + Demo Auth
+## Workit Landing + Auth
 
 - Run locally:
   - `pnpm install`
@@ -50,7 +45,3 @@ pnpm dev
   - Quest showcase cards: `apps/web/components/landing/quest-card.tsx`
   - Sample proof receipt fields: `apps/web/components/landing/receipt-viewer.tsx`
   - Auth messaging and labels: `apps/web/components/auth/auth-entry-panel.tsx` (Formik + Yup OTP/OAuth panel)
-- Where to plug in real auth later:
-  - Replace demo functions in `apps/web/lib/demo-auth.ts` with API-backed calls.
-  - Keep app state wiring in `apps/web/components/auth/auth-provider.tsx`.
-  - Route protection logic for `/app` lives in `apps/web/components/app/app-shell.tsx` (swap to server/session guard when backend auth is ready).
