@@ -5,7 +5,7 @@ export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/api/protected/")) {
     const token = await getToken({
       req: request,
-      secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_ACCESS_TOKEN_SECRET
+      secret: process.env.NEXTAUTH_SECRET
     });
     if (!token?.workitUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

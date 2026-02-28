@@ -108,18 +108,12 @@ importers:
       '@workit/hedera-kms-wallet':
         specifier: workspace:*
         version: link:../hedera-kms-wallet
-      bcryptjs:
-        specifier: ^2.4.3
-        version: 2.4.3
       bn.js:
         specifier: 5.2.1
         version: 5.2.1
       drizzle-orm:
         specifier: ^0.44.6
         version: 0.44.7(gel@2.2.0)(postgres@3.4.8)
-      jose:
-        specifier: ^5.9.6
-        version: 5.10.0
       postgres:
         specifier: ^3.4.7
         version: 3.4.8
@@ -2269,9 +2263,6 @@ packages:
     resolution: {integrity: sha512-lIyg0szRfYbiy67j9KN8IyeD7q7hcmqnJ1ddWmNt19ItGpNN64mnllmxUNFIOdOm6by97jlL6wfpTTJrmnjWAA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
-
-  bcryptjs@2.4.3:
-    resolution: {integrity: sha512-V/Hy/X9Vt7f3BbPJEi8BdVFMByHi+jNXrYkW3huaybV/kQ0KJg0Y6PkEMbn+zeT+i+SiKZ/HMqJGIIt4LZDqNQ==}
 
   bignumber.js@9.1.1:
     resolution: {integrity: sha512-pHm4LsMJ6lzgNGVfZHjMoO8sdoRhOzOH4MLmY65Jg70bpxCKu5iOHNJyfF6OyvYw7t8Fpf35RuzUyqnQsj8Vig==}
@@ -6772,8 +6763,6 @@ snapshots:
   base64-js@1.5.1: {}
 
   baseline-browser-mapping@2.10.0: {}
-
-  bcryptjs@2.4.3: {}
 
   bignumber.js@9.1.1: {}
 

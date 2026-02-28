@@ -8,6 +8,13 @@
       "when": 1772293791209,
       "tag": "0000_chilly_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772295657415,
+      "tag": "0001_serious_enchantress",
+      "breakpoints": true
     }
   ]
 }

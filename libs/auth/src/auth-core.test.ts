@@ -1,68 +1,39 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, verifyPassword } from "./password";
 import { assertWithinRateLimit } from "./rate-limit";
-import { createAccessToken, hashRefreshToken, newRefreshTokenValue, verifyAccessToken } from "./token";
-import { validateEmailLoginInput, validateEmailRegistrationInput, validateOAuthInput } from "./validation";
+import { validateEmailOtpRequestInput, validateEmailOtpVerifyInput, validateOAuthInput } from "./validation";
 
-test("registration validation normalizes email and enforces strong passwords", () => {
-  const valid = validateEmailRegistrationInput({
-    email: "User@Example.com",
-    password: "StrongPass1!"
+test("otp request and oauth validation normalize input", () => {
+  const otpRequest = validateEmailOtpRequestInput({
+    email: "User@Example.com"
   });
 
-  assert.equal(valid.email, "user@example.com");
-  assert.throws(() =>
-    validateEmailRegistrationInput({
-      email: "user@example.com",
-      password: "weak"
-    })
-  );
-});
-
-test("login and oauth validation accept valid payloads", () => {
-  const login = validateEmailLoginInput({
-    email: "USER@example.com",
-    password: "anything"
-  });
   const oauth = validateOAuthInput({
     provider: "google",
     providerUserId: "google-123",
     email: "OAuth@Example.com"
   });
 
-  assert.equal(login.email, "user@example.com");
+  assert.equal(otpRequest.email, "user@example.com");
   assert.equal(oauth.email, "oauth@example.com");
 });
 
-test("password hashing verifies correctly", async () => {
-  const plain = "StrongPass1!";
-  const hashed = await hashPassword(plain);
-
-  assert.notEqual(hashed, plain);
-  assert.equal(await verifyPassword(plain, hashed), true);
-  assert.equal(await verifyPassword("WrongPass1!", hashed), false);
-});
-
-test("jwt access tokens are created and verified", async () => {
-  const token = await createAccessToken({
-    id: "user-1",
-    email: "user@example.com"
+test("otp verify validation enforces challenge id and code format", () => {
+  const valid = validateEmailOtpVerifyInput({
+    challengeId: "3b7a944f-451f-40d5-95d7-11f26beec4cb",
+    email: "test@example.com",
+    code: "123456"
   });
-  const payload = await verifyAccessToken(token);
 
-  assert.equal(payload.sub, "user-1");
-  assert.equal(payload.email, "user@example.com");
-  assert.equal(payload.type, "access");
-});
+  assert.equal(valid.code, "123456");
 
-test("refresh token generation and hashing are deterministic", () => {
-  const refreshToken = newRefreshTokenValue();
-  const hashA = hashRefreshToken(refreshToken);
-  const hashB = hashRefreshToken(refreshToken);
-
-  assert.ok(refreshToken.length > 20);
-  assert.equal(hashA, hashB);
+  assert.throws(() =>
+    validateEmailOtpVerifyInput({
+      challengeId: "invalid-id",
+      email: "test@example.com",
+      code: "12"
+    })
+  );
 });
 
 test("rate limiter blocks excessive requests for same key", () => {

@@ -4,7 +4,7 @@ import { getToken } from "next-auth/jwt";
 export async function GET(request: NextRequest) {
   const token = await getToken({
     req: request,
-    secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_ACCESS_TOKEN_SECRET
+    secret: process.env.NEXTAUTH_SECRET
   });
   const user = token?.workitUser as { id: string; email: string | null; hederaAccountId: string | null; createdAt: string } | undefined;
   if (!user) {

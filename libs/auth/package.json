@@ -16,9 +16,7 @@
     "@workit/common": "workspace:*",
     "@workit/hedera-kms-wallet": "workspace:*",
     "bn.js": "5.2.1",
-    "bcryptjs": "^2.4.3",
     "drizzle-orm": "^0.44.6",
-    "jose": "^5.9.6",
     "postgres": "^3.4.7",
     "zod": "^3.24.1"
   }
