@@ -39,3 +39,19 @@ pnpm dev
 - `pnpm test`: Run all tests
 - `pnpm affected:build`: Build only affected projects
 - `pnpm graph`: Visualize dependency graph
+
+## Workit Landing + Demo Auth
+
+- Run locally:
+  - `pnpm install`
+  - `pnpm --filter @workit/web dev`
+  - Open `http://localhost:3000` for the landing page, `http://localhost:3000/auth` for auth entry, and `http://localhost:3000/app` for the protected shell.
+- Where to change copy:
+  - Landing content sections: `apps/web/components/landing/landing-page.tsx`
+  - Quest showcase cards: `apps/web/components/landing/quest-card.tsx`
+  - Sample proof receipt fields: `apps/web/components/landing/receipt-viewer.tsx`
+  - Auth messaging and labels: `apps/web/components/auth/auth-entry-panel.tsx`
+- Where to plug in real auth later:
+  - Replace demo functions in `apps/web/lib/demo-auth.ts` with API-backed calls.
+  - Keep app state wiring in `apps/web/components/auth/auth-provider.tsx`.
+  - Route protection logic for `/app` lives in `apps/web/components/app/app-shell.tsx` (swap to server/session guard when backend auth is ready).

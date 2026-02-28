@@ -3,24 +3,24 @@
 @tailwind utilities;
 
 :root {
-  --background: 45 40% 98%;
-  --foreground: 23 23% 12%;
+  --background: 38 46% 97%;
+  --foreground: 26 24% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 23 23% 12%;
-  --primary: 19 78% 44%;
-  --primary-foreground: 40 30% 98%;
-  --secondary: 44 90% 92%;
-  --secondary-foreground: 24 45% 20%;
-  --muted: 40 32% 93%;
-  --muted-foreground: 25 12% 35%;
-  --accent: 35 88% 90%;
-  --accent-foreground: 20 65% 24%;
-  --destructive: 3 78% 43%;
-  --destructive-foreground: 38 50% 98%;
-  --border: 27 26% 84%;
-  --input: 28 30% 84%;
-  --ring: 19 78% 44%;
-  --radius: 0.75rem;
+  --card-foreground: 26 24% 12%;
+  --primary: 173 82% 29%;
+  --primary-foreground: 40 35% 98%;
+  --secondary: 42 88% 91%;
+  --secondary-foreground: 29 54% 20%;
+  --muted: 41 30% 92%;
+  --muted-foreground: 26 11% 35%;
+  --accent: 163 42% 90%;
+  --accent-foreground: 164 52% 18%;
+  --destructive: 3 72% 44%;
+  --destructive-foreground: 39 45% 98%;
+  --border: 32 22% 82%;
+  --input: 32 24% 82%;
+  --ring: 173 82% 29%;
+  --radius: 0.85rem;
 }
 
 * {
@@ -31,7 +31,25 @@ body {
   @apply bg-background text-foreground antialiased;
 }
 
+.font-workit {
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
 .focus-ring {
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
 }
 
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.6s ease-out both;
+}
