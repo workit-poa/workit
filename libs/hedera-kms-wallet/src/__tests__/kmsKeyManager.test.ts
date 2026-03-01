@@ -7,7 +7,7 @@ import {
   GetPublicKeyCommand,
   type KMSClient
 } from "@aws-sdk/client-kms";
-import { createUserKmsKey, getPublicKeyBytes, kmsAccessPolicyGuidance } from "./kmsKeyManager";
+import { createUserKmsKey, getPublicKeyBytes, kmsAccessPolicyGuidance } from "../kmsKeyManager";
 
 function fakeKms(send: (command: unknown) => Promise<unknown>): KMSClient {
   return { send } as unknown as KMSClient;

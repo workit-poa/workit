@@ -10,7 +10,7 @@ import {
   SignCommand
 } from "@aws-sdk/client-kms";
 import { AccountCreateTransaction, Client, PrivateKey } from "@hashgraph/sdk";
-import { provisionHederaAccountForUser } from "./walletProvisioning";
+import { provisionHederaAccountForUser } from "../walletProvisioning";
 
 afterEach(() => {
   vi.restoreAllMocks();

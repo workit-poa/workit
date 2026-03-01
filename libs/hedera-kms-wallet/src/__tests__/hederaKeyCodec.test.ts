@@ -8,7 +8,7 @@ import {
   normalizeS,
   rsToRaw64,
   spkiToUncompressedPublicKey
-} from "./hederaKeyCodec";
+} from "../hederaKeyCodec";
 
 const SECP256K1_N = BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141");
 

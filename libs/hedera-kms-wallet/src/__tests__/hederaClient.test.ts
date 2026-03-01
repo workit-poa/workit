@@ -16,8 +16,8 @@ import {
   mirrorLinkForTransaction,
   submitTinybarTransferWithKmsSignature,
   submitTopicMessageWithKmsSignature
-} from "./hederaClient";
-import type { KmsHederaSigner } from "./kmsSigner";
+} from "../hederaClient";
+import type { KmsHederaSigner } from "../kmsSigner";
 
 afterEach(() => {
   vi.restoreAllMocks();

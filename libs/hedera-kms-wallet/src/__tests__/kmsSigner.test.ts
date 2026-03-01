@@ -2,7 +2,7 @@ import { generateKeyPairSync, sign as signWithKey } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { GetPublicKeyCommand, SignCommand, type KMSClient } from "@aws-sdk/client-kms";
-import { createKmsHederaSigner } from "./kmsSigner";
+import { createKmsHederaSigner } from "../kmsSigner";
 
 function fakeKms(send: (command: unknown) => Promise<unknown>): KMSClient {
   return { send } as unknown as KMSClient;
