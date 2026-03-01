@@ -111,7 +111,7 @@ export const nextAuthOptions: NextAuthOptions = {
     async signIn({ account, user }) {
       if (!account) return false;
 
-      if (account.provider === "credentials") return true;
+      if (account.type === "credentials") return true;
 
       if (!user.email) {
         return encodeErrorRedirect("OAuth provider did not return an email address");
@@ -120,7 +120,7 @@ export const nextAuthOptions: NextAuthOptions = {
       return true;
     },
     async jwt({ token, user, account }) {
-      if (account?.provider === "credentials" && user) {
+      if (account?.type === "credentials" && user) {
         token.workitUser = {
           id: user.id,
           email: user.email ?? null,
@@ -131,7 +131,7 @@ export const nextAuthOptions: NextAuthOptions = {
         return token;
       }
 
-      if (account && account.provider !== "credentials") {
+      if (account?.type === "oauth") {
         const provider =
           account.provider === "google" ? "google" : account.provider === "discord" ? "discord" : account.provider === "x" ? "x" : null;
         if (!provider) {

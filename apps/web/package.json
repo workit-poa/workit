@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('web tests pending')\""
+    "test": "node --import tsx --test lib/*.test.ts"
   },
   "dependencies": {
     "@workit/auth": "workspace:*",
