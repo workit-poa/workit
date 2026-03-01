@@ -97,6 +97,11 @@ Required environment variables:
   - `DEMO_MODE=topic` (default) or `DEMO_MODE=transfer`
   - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR=1` (passed into provisioning for initial account funding; set `0` to skip)
 
+Environment file location for demo:
+- Put env vars in `libs/hedera-kms-wallet/.env` (preferred for this package)
+- The demo also reads repo-root `../../.env` as fallback
+- Start from `libs/hedera-kms-wallet/.env.example`
+
 Run:
 
 ```bash
@@ -129,6 +134,26 @@ Run coverage report:
 
 ```bash
 pnpm --filter @workit/hedera-kms-wallet test:coverage
+```
+
+Environment file location for tests:
+- Current unit tests are mocked and do not require env vars
+- If you add env-dependent tests, use `libs/hedera-kms-wallet/.env.test`
+- For machine-local secrets, use `libs/hedera-kms-wallet/.env.test.local` (gitignored)
+
+## Publishing
+
+Package is configured for npm publishing:
+- entrypoints: `dist/index.js` + `dist/index.d.ts`
+- export map in `package.json`
+- published files restricted to `dist`, `README.md`, and `.env.example`
+- `pnpm --filter @workit/hedera-kms-wallet prepack` runs clean + lint + tests + build
+
+Pack and inspect:
+
+```bash
+pnpm --filter @workit/hedera-kms-wallet prepack
+pnpm --filter @workit/hedera-kms-wallet pack
 ```
 
 ## Integration With Workit Auth

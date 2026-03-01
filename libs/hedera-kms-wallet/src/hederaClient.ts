@@ -10,10 +10,15 @@ import {
   type TransactionResponse,
   TransferTransaction
 } from "@hashgraph/sdk";
-import type { WalletDetails } from "@workit/common";
 import type { KmsHederaSigner } from "./kmsSigner";
 
 export type HederaNetwork = "testnet" | "mainnet";
+
+export interface WalletDetails {
+  accountId: string;
+  network: HederaNetwork;
+  evmAddress?: string;
+}
 
 export interface HederaOperatorConfig {
   network?: HederaNetwork;

@@ -134,9 +134,6 @@ importers:
       '@noble/hashes':
         specifier: ^1.7.1
         version: 1.7.1
-      '@workit/common':
-        specifier: workspace:*
-        version: link:../common
       dotenv:
         specifier: ^16.4.5
         version: 16.4.7

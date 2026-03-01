@@ -1,14 +1,30 @@
 {
   "name": "@workit/hedera-kms-wallet",
   "version": "0.1.0",
-  "private": true,
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "private": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    ".env.example"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.build.json",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "prepack": "pnpm run clean && pnpm run lint && pnpm run test && pnpm run build",
     "demo:kms-hedera": "tsx src/demo/kms-hedera-demo.ts"
   },
   "devDependencies": {
@@ -19,7 +35,6 @@
     "@noble/hashes": "^1.7.1",
     "@aws-sdk/client-kms": "^3.900.0",
     "@hashgraph/sdk": "^2.62.0",
-    "@workit/common": "workspace:*",
     "dotenv": "^16.4.5"
   }
 }
