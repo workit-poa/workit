@@ -95,12 +95,16 @@ Required environment variables:
   - `KMS_KEY_ID` (reuse existing key)
   - `HEDERA_USER_ACCOUNT_ID` (reuse existing account)
   - `DEMO_MODE=topic` (default) or `DEMO_MODE=transfer`
-  - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR=1` (passed into provisioning for initial account funding; set `0` to skip)
+  - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR=1` (required and must be `> 0` when provisioning a new demo account)
 
 Environment file location for demo:
 - Put env vars in `libs/hedera-kms-wallet/.env` (preferred for this package)
 - The demo also reads repo-root `../../.env` as fallback
 - Start from `libs/hedera-kms-wallet/.env.example`
+
+Fail-fast behavior:
+- Demo validates `DEMO_MODE` and `DEMO_TRANSFER_TINYBAR` before running.
+- If provisioning a new account (missing `KMS_KEY_ID` or `HEDERA_USER_ACCOUNT_ID`), it fails early unless `HEDERA_NEW_ACCOUNT_INITIAL_HBAR > 0`.
 
 Run:
 

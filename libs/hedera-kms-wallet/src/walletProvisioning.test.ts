@@ -183,7 +183,7 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
   assert.equal(setInitialBalanceSpy.mock.calls.length, 0);
 });
 
-test("provisionHederaAccountForUser reads config defaults from environment and accepts envInitialHbar", async () => {
+test("provisionHederaAccountForUser reads config defaults from environment", async () => {
   const fixture = buildKmsFixture();
   const setInitialBalanceSpy = vi.spyOn(AccountCreateTransaction.prototype, "setInitialBalance");
   vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
@@ -221,7 +221,7 @@ test("provisionHederaAccountForUser reads config defaults from environment and a
       const result = await provisionHederaAccountForUser({
         userId: "env-user",
         existingKeyId: "env-key-id",
-        envInitialHbar: process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR
+        initialHbar: Number(process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR)
       });
       assert.equal(result.accountId, "0.0.9003");
       assert.equal(result.keyId, "env-key-id");
@@ -280,7 +280,7 @@ test("provisionHederaAccountForUser validates required inputs", async () => {
         awsRegion: "us-east-1",
         operatorId: "0.0.2",
         operatorKey: PrivateKey.generateECDSA().toStringRaw(),
-        envInitialHbar: "abc"
+        initialHbar: Number.NaN
       }),
     /initialHbar must be a non-negative number when provided/
   );

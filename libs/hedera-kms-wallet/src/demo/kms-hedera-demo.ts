@@ -33,6 +33,36 @@ function loadEnvForDemo(): void {
   loadDotenv({ path: packageEnv, override: false });
 }
 
+function parseDemoMode(value: string | undefined): "topic" | "transfer" {
+  const normalized = (value || "topic").toLowerCase();
+  if (normalized !== "topic" && normalized !== "transfer") {
+    throw new Error(`Invalid DEMO_MODE "${value}". Expected "topic" or "transfer".`);
+  }
+  return normalized;
+}
+
+function parseOptionalNonNegativeNumber(name: string, value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative number when provided.`);
+  }
+
+  return parsed;
+}
+
+function parsePositiveSafeInteger(name: string, value: string | undefined, fallback: number): number {
+  const parsed = value === undefined || value.trim() === "" ? fallback : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive safe integer.`);
+  }
+
+  return parsed;
+}
+
 async function run(): Promise<void> {
   loadEnvForDemo();
 
@@ -42,8 +72,9 @@ async function run(): Promise<void> {
   }
   const userId = process.env.DEMO_USER_ID || `demo-user-${Date.now()}`;
   const message = process.env.DEMO_TOPIC_MESSAGE || `workit-kms-demo ${new Date().toISOString()}`;
-  const transferTinybar = Number(process.env.DEMO_TRANSFER_TINYBAR || 1);
-  const demoMode = process.env.DEMO_MODE || "topic";
+  const transferTinybar = parsePositiveSafeInteger("DEMO_TRANSFER_TINYBAR", process.env.DEMO_TRANSFER_TINYBAR, 1);
+  const demoMode = parseDemoMode(process.env.DEMO_MODE);
+  const initialHbar = parseOptionalNonNegativeNumber("HEDERA_NEW_ACCOUNT_INITIAL_HBAR", process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR);
 
   const { client, network, operatorId } = createHederaClientFromEnv();
   const kms = new KMSClient({ region: awsRegion });
@@ -64,6 +95,14 @@ async function run(): Promise<void> {
   try {
     const existingKeyId = process.env.KMS_KEY_ID;
     const existingAccountId = process.env.HEDERA_USER_ACCOUNT_ID;
+    const willProvisionNewAccount = !existingKeyId || !existingAccountId;
+
+    if (willProvisionNewAccount && (initialHbar === undefined || initialHbar <= 0)) {
+      throw new Error(
+        "HEDERA_NEW_ACCOUNT_INITIAL_HBAR must be > 0 when provisioning a new demo account. " +
+          "Set HEDERA_NEW_ACCOUNT_INITIAL_HBAR or provide both KMS_KEY_ID and HEDERA_USER_ACCOUNT_ID for an already funded account."
+      );
+    }
 
     let keyId = existingKeyId;
     let accountId = existingAccountId;
@@ -76,7 +115,7 @@ async function run(): Promise<void> {
         hederaNetwork: network,
         operatorId,
         operatorKey: process.env.OPERATOR_KEY || process.env.HEDERA_OPERATOR_KEY,
-        envInitialHbar: process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR
+        initialHbar
       });
 
       keyId = provisioned.keyId;

@@ -12,7 +12,6 @@ export interface ProvisionHederaAccountForUserParams {
   operatorId?: string;
   operatorKey?: string;
   initialHbar?: number;
-  envInitialHbar?: string | number;
   aliasPrefix?: string;
   keyDescriptionPrefix?: string;
   existingKeyId?: string;
@@ -34,23 +33,6 @@ function fingerprintFromPublicKey(publicKeyCompressed: Uint8Array): string {
   return createHash("sha256").update(publicKeyCompressed).digest("hex");
 }
 
-function parseOptionalInitialHbar(value: number | string | undefined): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value === "string" && value.trim() === "") {
-    return undefined;
-  }
-
-  const parsedValue = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
-    throw new Error("initialHbar must be a non-negative number when provided");
-  }
-
-  return parsedValue;
-}
-
 export async function provisionHederaAccountForUser(
   params: ProvisionHederaAccountForUserParams
 ): Promise<ProvisionedHederaWallet> {
@@ -61,7 +43,6 @@ export async function provisionHederaAccountForUser(
     operatorId = process.env.OPERATOR_ID || process.env.HEDERA_OPERATOR_ID,
     operatorKey = process.env.OPERATOR_KEY || process.env.HEDERA_OPERATOR_KEY,
     initialHbar,
-    envInitialHbar,
     aliasPrefix = process.env.HEDERA_KMS_ALIAS_PREFIX || "alias/workit-user",
     keyDescriptionPrefix = process.env.HEDERA_KMS_KEY_DESCRIPTION_PREFIX || "Workit Hedera key for user",
     existingKeyId
@@ -75,9 +56,9 @@ export async function provisionHederaAccountForUser(
   if (!operatorId || !operatorKey) {
     throw new Error("Missing operator credentials: OPERATOR_ID/OPERATOR_KEY (or HEDERA_OPERATOR_ID/HEDERA_OPERATOR_KEY)");
   }
-
-  const resolvedInitialHbar =
-    initialHbar !== undefined ? parseOptionalInitialHbar(initialHbar) : parseOptionalInitialHbar(envInitialHbar);
+  if (initialHbar !== undefined && (!Number.isFinite(initialHbar) || initialHbar < 0)) {
+    throw new Error("initialHbar must be a non-negative number when provided");
+  }
 
   const normalizedExistingKeyId = existingKeyId?.trim();
 
@@ -108,8 +89,8 @@ export async function provisionHederaAccountForUser(
     });
 
     let accountCreateTx = new AccountCreateTransaction().setKey(signer.hederaPublicKey);
-    if (resolvedInitialHbar !== undefined && resolvedInitialHbar > 0) {
-      accountCreateTx = accountCreateTx.setInitialBalance(new Hbar(resolvedInitialHbar));
+    if (initialHbar !== undefined && initialHbar > 0) {
+      accountCreateTx = accountCreateTx.setInitialBalance(new Hbar(initialHbar));
     }
     accountCreateTx = await accountCreateTx.freezeWith(hederaClient);
 
