@@ -9,6 +9,21 @@ import {
 } from "../hederaClient";
 import { createKmsHederaSigner } from "../kmsSigner";
 
+let activeCleanup: (() => Promise<void>) | undefined;
+
+process.once("SIGINT", () => {
+  console.error("\nSIGINT received, shutting down...");
+  process.exitCode = 130;
+
+  if (!activeCleanup) {
+    process.exit(130);
+  }
+
+  void activeCleanup().finally(() => {
+    process.exit(130);
+  });
+});
+
 function loadEnvForDemo(): void {
   const packageEnv = resolve(process.cwd(), ".env");
   const rootEnv = resolve(process.cwd(), "../../.env");
@@ -31,6 +46,19 @@ async function run(): Promise<void> {
 
   const { client, network, operatorId } = createHederaClientFromEnv();
   const kms = new KMSClient({ region: awsRegion });
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup = async (): Promise<void> => {
+    if (!cleanupPromise) {
+      cleanupPromise = Promise.resolve().then(() => {
+        kms.destroy();
+        client.close();
+      });
+    }
+
+    await cleanupPromise;
+  };
+
+  activeCleanup = cleanup;
 
   try {
     const existingKeyId = process.env.KMS_KEY_ID;
@@ -108,12 +136,15 @@ async function run(): Promise<void> {
       }
     }
   } finally {
-    kms.destroy();
-    client.close();
+    await cleanup();
+    activeCleanup = undefined;
   }
 }
 
 run().catch(error => {
   console.error("Demo failed:", error);
-  process.exitCode = 1;
+
+  if (process.exitCode !== 130) {
+    process.exitCode = 1;
+  }
 });
