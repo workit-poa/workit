@@ -56,6 +56,7 @@ test("provisionHederaAccountForUser provisions a new key-backed account", async 
   let clientClosed = 0;
   const destroy = KMSClient.prototype.destroy;
   const close = Client.prototype.close;
+  const setInitialBalanceSpy = vi.spyOn(AccountCreateTransaction.prototype, "setInitialBalance");
 
   vi.spyOn(KMSClient.prototype, "destroy").mockImplementation(function (this: KMSClient) {
     kmsDestroyed += 1;
@@ -128,11 +129,13 @@ test("provisionHederaAccountForUser provisions a new key-backed account", async 
   ]);
   assert.equal(sentCommands.slice(4).every(command => command === "SignCommand"), true);
   assert.equal(sentCommands.filter(command => command === "SignCommand").length > 0, true);
+  assert.equal(setInitialBalanceSpy.mock.calls.length, 1);
 });
 
 test("provisionHederaAccountForUser supports existing key id path", async () => {
   const fixture = buildKmsFixture();
   const sentCommands: string[] = [];
+  const setInitialBalanceSpy = vi.spyOn(AccountCreateTransaction.prototype, "setInitialBalance");
 
   vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
     sentCommands.push((command as { constructor: { name: string } }).constructor.name);
@@ -164,7 +167,8 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
     hederaNetwork: "testnet",
     operatorId: "0.0.2",
     operatorKey: PrivateKey.generateECDSA().toStringRaw(),
-    existingKeyId: "  existing-kms-key-id  "
+    existingKeyId: "  existing-kms-key-id  ",
+    initialHbar: 0
   });
 
   assert.equal(result.accountId, "0.0.9002");
@@ -176,10 +180,12 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
   assert.equal(sentCommands[0], "GetPublicKeyCommand");
   assert.equal(sentCommands.slice(1).every(command => command === "SignCommand"), true);
   assert.equal(sentCommands.filter(command => command === "SignCommand").length > 0, true);
+  assert.equal(setInitialBalanceSpy.mock.calls.length, 0);
 });
 
-test("provisionHederaAccountForUser reads config defaults from environment", async () => {
+test("provisionHederaAccountForUser reads config defaults from environment and accepts envInitialHbar", async () => {
   const fixture = buildKmsFixture();
+  const setInitialBalanceSpy = vi.spyOn(AccountCreateTransaction.prototype, "setInitialBalance");
   vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
     if (command instanceof CreateKeyCommand || command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
       throw new Error("new key creation should not run when existingKeyId is provided");
@@ -214,10 +220,12 @@ test("provisionHederaAccountForUser reads config defaults from environment", asy
     async () => {
       const result = await provisionHederaAccountForUser({
         userId: "env-user",
-        existingKeyId: "env-key-id"
+        existingKeyId: "env-key-id",
+        envInitialHbar: process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR
       });
       assert.equal(result.accountId, "0.0.9003");
       assert.equal(result.keyId, "env-key-id");
+      assert.equal(setInitialBalanceSpy.mock.calls.length, 1);
     }
   );
 });
@@ -260,9 +268,21 @@ test("provisionHederaAccountForUser validates required inputs", async () => {
         awsRegion: "us-east-1",
         operatorId: "0.0.2",
         operatorKey: PrivateKey.generateECDSA().toStringRaw(),
-        initialHbar: 0
+        initialHbar: -1
       }),
-    /initialHbar must be a positive number/
+    /initialHbar must be a non-negative number when provided/
+  );
+
+  await assert.rejects(
+    () =>
+      provisionHederaAccountForUser({
+        userId: "user-1",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        envInitialHbar: "abc"
+      }),
+    /initialHbar must be a non-negative number when provided/
   );
 });
 

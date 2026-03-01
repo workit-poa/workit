@@ -95,6 +95,7 @@ Required environment variables:
   - `KMS_KEY_ID` (reuse existing key)
   - `HEDERA_USER_ACCOUNT_ID` (reuse existing account)
   - `DEMO_MODE=topic` (default) or `DEMO_MODE=transfer`
+  - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR=1` (passed into provisioning for initial account funding; set `0` to skip)
 
 Run:
 

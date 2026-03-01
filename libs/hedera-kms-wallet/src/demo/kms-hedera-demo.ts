@@ -76,7 +76,7 @@ async function run(): Promise<void> {
         hederaNetwork: network,
         operatorId,
         operatorKey: process.env.OPERATOR_KEY || process.env.HEDERA_OPERATOR_KEY,
-        initialHbar: Number(process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR || 1)
+        envInitialHbar: process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR
       });
 
       keyId = provisioned.keyId;
