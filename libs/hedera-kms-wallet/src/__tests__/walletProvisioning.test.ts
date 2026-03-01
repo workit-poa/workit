@@ -10,8 +10,8 @@ import {
   KMSClient,
   SignCommand
 } from "@aws-sdk/client-kms";
-import { AccountCreateTransaction, Client, PrivateKey } from "@hashgraph/sdk";
-import { provisionHederaAccountForUser } from "../walletProvisioning";
+import { AccountCreateTransaction, AccountUpdateTransaction, Client, PrivateKey } from "@hashgraph/sdk";
+import { provisionHederaAccountForUser, rotateHederaAccountKmsKey } from "../walletProvisioning";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -339,6 +339,248 @@ test("provisionHederaAccountForUser validates required inputs", async () => {
         operatorKey: PrivateKey.generateECDSA().toStringRaw()
       }),
     /existingKeyId is required unless allowKeyCreation=true/
+  );
+});
+
+test("rotateHederaAccountKmsKey creates a replacement key and submits account update", async () => {
+  const currentFixture = buildKmsFixture();
+  const replacementFixture = buildKmsFixture();
+  const sentCommands: string[] = [];
+  const signKeyIds: string[] = [];
+  const destroy = KMSClient.prototype.destroy;
+  const close = Client.prototype.close;
+  let kmsDestroyed = 0;
+  let clientClosed = 0;
+
+  vi.spyOn(KMSClient.prototype, "destroy").mockImplementation(function (this: KMSClient) {
+    kmsDestroyed += 1;
+    return destroy.call(this);
+  });
+  vi.spyOn(Client.prototype, "close").mockImplementation(function (this: Client) {
+    clientClosed += 1;
+    return close.call(this);
+  });
+  vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
+    sentCommands.push((command as { constructor: { name: string } }).constructor.name);
+
+    if (command instanceof CreateKeyCommand) {
+      return {
+        KeyMetadata: {
+          KeyId: "kms-key-new",
+          Arn: "arn:aws:kms:us-east-1:123456789012:key/kms-key-new"
+        }
+      } as never;
+    }
+    if (command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
+      return {} as never;
+    }
+    if (command instanceof DescribeKeyCommand) {
+      const keyId = String(command.input.KeyId);
+      return {
+        KeyMetadata: {
+          KeyId: keyId,
+          Arn: `arn:aws:kms:us-east-1:123456789012:key/${keyId}`,
+          Enabled: true,
+          KeyState: "Enabled",
+          KeySpec: "ECC_SECG_P256K1",
+          KeyUsage: "SIGN_VERIFY"
+        }
+      } as never;
+    }
+    if (command instanceof GetPublicKeyCommand) {
+      const keyId = String(command.input.KeyId);
+      if (keyId === "kms-key-current") {
+        return { PublicKey: currentFixture.spkiBytes } as never;
+      }
+      return { PublicKey: replacementFixture.spkiBytes } as never;
+    }
+    if (command instanceof SignCommand) {
+      const keyId = String(command.input.KeyId);
+      signKeyIds.push(keyId);
+      if (keyId === "kms-key-current") {
+        return { Signature: currentFixture.derSignature } as never;
+      }
+      return { Signature: replacementFixture.derSignature } as never;
+    }
+
+    throw new Error("Unexpected command");
+  });
+  vi.spyOn(AccountUpdateTransaction.prototype, "execute").mockImplementation(
+    async () =>
+      ({
+        transactionId: { toString: () => "0.0.2@1700000000.000000020" },
+        getReceipt: async () => ({
+          status: { toString: () => "SUCCESS" }
+        })
+      }) as never
+  );
+
+  const result = await rotateHederaAccountKmsKey({
+    userId: "rotate-user-1",
+    accountId: "0.0.9010",
+    currentKeyId: "kms-key-current",
+    awsRegion: "us-east-1",
+    hederaNetwork: "testnet",
+    operatorId: "0.0.2",
+    operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+    policyBindings: {
+      accountId: "123456789012",
+      keyAdminPrincipalArn: "arn:aws:iam::123456789012:role/WorkitKmsKeyAdmin",
+      runtimeSignerPrincipalArn: "arn:aws:iam::123456789012:role/WorkitRuntimeSigner"
+    }
+  });
+
+  assert.equal(result.accountId, "0.0.9010");
+  assert.equal(result.previousKeyId, "kms-key-current");
+  assert.equal(result.keyId, "kms-key-new");
+  assert.equal(result.aliasName, "alias/workit-user/rotate-user-1");
+  assert.equal(result.rotationEnabled, true);
+  assert.equal(result.receiptStatus, "SUCCESS");
+  assert.equal(result.transactionId, "0.0.2@1700000000.000000020");
+  assert.equal(result.mirrorLink, "https://hashscan.io/testnet/transaction/0.0.2%401700000000.000000020");
+  assert.equal(result.previousPublicKeyCompressedHex.length, 66);
+  assert.equal(result.publicKeyCompressedHex.length, 66);
+  assert.equal(signKeyIds.includes("kms-key-current"), true);
+  assert.equal(signKeyIds.includes("kms-key-new"), true);
+  assert.equal(
+    sentCommands.slice(0, 3).every((command, index) =>
+      ["CreateKeyCommand", "CreateAliasCommand", "EnableKeyRotationCommand"][index] === command
+    ),
+    true
+  );
+  assert.equal(kmsDestroyed, 1);
+  assert.equal(clientClosed, 1);
+});
+
+test("rotateHederaAccountKmsKey supports using an existing replacement key id", async () => {
+  const currentFixture = buildKmsFixture();
+  const replacementFixture = buildKmsFixture();
+  const sentCommands: string[] = [];
+  const signKeyIds: string[] = [];
+
+  vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
+    sentCommands.push((command as { constructor: { name: string } }).constructor.name);
+
+    if (command instanceof CreateKeyCommand || command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
+      throw new Error("new key creation should not run when replacementKeyId is provided");
+    }
+    if (command instanceof DescribeKeyCommand) {
+      const keyId = String(command.input.KeyId);
+      return {
+        KeyMetadata: {
+          KeyId: keyId,
+          Arn: `arn:aws:kms:us-east-1:123456789012:key/${keyId}`,
+          Enabled: true,
+          KeyState: "Enabled",
+          KeySpec: "ECC_SECG_P256K1",
+          KeyUsage: "SIGN_VERIFY"
+        }
+      } as never;
+    }
+    if (command instanceof GetPublicKeyCommand) {
+      const keyId = String(command.input.KeyId);
+      if (keyId === "kms-key-current") {
+        return { PublicKey: currentFixture.spkiBytes } as never;
+      }
+      return { PublicKey: replacementFixture.spkiBytes } as never;
+    }
+    if (command instanceof SignCommand) {
+      const keyId = String(command.input.KeyId);
+      signKeyIds.push(keyId);
+      if (keyId === "kms-key-current") {
+        return { Signature: currentFixture.derSignature } as never;
+      }
+      return { Signature: replacementFixture.derSignature } as never;
+    }
+
+    throw new Error("Unexpected command");
+  });
+  vi.spyOn(AccountUpdateTransaction.prototype, "execute").mockImplementation(
+    async () =>
+      ({
+        transactionId: { toString: () => "0.0.2@1700000000.000000021" },
+        getReceipt: async () => ({
+          status: { toString: () => "SUCCESS" }
+        })
+      }) as never
+  );
+
+  const result = await rotateHederaAccountKmsKey({
+    userId: "rotate-user-2",
+    accountId: "0.0.9011",
+    currentKeyId: "kms-key-current",
+    replacementKeyId: "kms-key-precreated",
+    awsRegion: "us-east-1",
+    hederaNetwork: "mainnet",
+    operatorId: "0.0.2",
+    operatorKey: PrivateKey.generateECDSA().toStringRaw()
+  });
+
+  assert.equal(result.keyId, "kms-key-precreated");
+  assert.equal(result.aliasName, undefined);
+  assert.equal(result.rotationEnabled, false);
+  assert.match(result.rotationNote ?? "", /Replacement key id was provided/);
+  assert.equal(result.mirrorLink, "https://hashscan.io/mainnet/transaction/0.0.2%401700000000.000000021");
+  assert.equal(signKeyIds.includes("kms-key-current"), true);
+  assert.equal(signKeyIds.includes("kms-key-precreated"), true);
+  assert.equal(sentCommands.some(command => command === "CreateKeyCommand"), false);
+});
+
+test("rotateHederaAccountKmsKey validates required inputs", async () => {
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "   ",
+        accountId: "0.0.1",
+        currentKeyId: "kms-key-current"
+      }),
+    /userId is required/
+  );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        accountId: "   ",
+        currentKeyId: "kms-key-current"
+      }),
+    /accountId is required/
+  );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        accountId: "0.0.1",
+        currentKeyId: "   "
+      }),
+    /currentKeyId is required/
+  );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        accountId: "0.0.1",
+        currentKeyId: "kms-key-current",
+        awsRegion: "",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw()
+      }),
+    /Missing AWS_REGION/
+  );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        accountId: "0.0.1",
+        currentKeyId: "kms-key-current",
+        awsRegion: "us-east-1",
+        operatorId: "",
+        operatorKey: ""
+      }),
+    /Missing operator credentials/
   );
 });
 

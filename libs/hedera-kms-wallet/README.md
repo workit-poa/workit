@@ -41,6 +41,20 @@ Key creation is enforced with explicit key policy input via:
 
 If neither is provided, key creation fails unless `allowUnsafeDefaultKeyPolicy=true` is explicitly set.
 
+### `allowUnsafeDefaultKeyPolicy` implications
+
+`allowUnsafeDefaultKeyPolicy=true` allows KMS key creation without enforcing an explicit least-privilege key policy in this package.
+
+Security impact:
+- You lose create-time guarantees that only designated admin/signer principals can manage and use the key.
+- Access scope may drift to broader defaults than intended for production.
+- Runtime and administration boundaries become policy-dependent outside this package's checks.
+
+Use guidance:
+- Production/staging: keep `allowUnsafeDefaultKeyPolicy=false`.
+- Provide `policyBindings` (recommended) or explicit `keyPolicy` for all key-creation flows.
+- Use `allowUnsafeDefaultKeyPolicy=true` only for local demos/sandbox experiments where key isolation is not a security boundary.
+
 Runtime role should allow only:
 - `kms:Sign`
 - `kms:GetPublicKey`
@@ -80,7 +94,8 @@ Package-level audit hook:
 
 - Secure key generation/storage/rotation:
   - `createUserKmsKey()` creates `ECC_SECG_P256K1` `SIGN_VERIFY` keys.
-  - Rotation control is attempted and documented; asymmetric auto-rotation limitation is captured with migration guidance.
+  - `rotateHederaAccountKmsKey()` performs managed rotation by creating/reusing a replacement KMS key and submitting Hedera `AccountUpdateTransaction`.
+  - Asymmetric KMS auto-rotation limitation is handled by key replacement workflow rather than automatic in-place rotation.
 - Submit a Hedera transaction:
   - `src/demo/kms-hedera-demo.ts` submits a topic message or tinybar transfer on testnet.
 - Access controls + audit logging:
@@ -182,6 +197,11 @@ pnpm --filter @workit/hedera-kms-wallet pack
 - `hederaAccountId`
 - `hederaPublicKeyFingerprint`
 
+For key rotation, call `rotateHederaAccountKmsKey()` and update persisted values:
+- new `kmsKeyId`
+- new `hederaPublicKeyFingerprint`
+- old key lifecycle status (disabled/scheduled for deletion) per your operations policy
+
 Security default:
 - Runtime flows should pass an `existingKeyId` and keep `allowKeyCreation=false`.
 - Admin provisioning flows can set `allowKeyCreation=true` with explicit `policyBindings`.
@@ -189,12 +209,29 @@ Security default:
 ## Rotation Notes
 
 AWS KMS automatic rotation is not currently supported for asymmetric secp256k1 signing keys.
-Operational rotation pattern:
-1. Create a new KMS secp256k1 key.
-2. Derive new public key.
-3. Submit Hedera `AccountUpdateTransaction` to rotate account key.
-4. Update DB mapping to new `kmsKeyId` and fingerprint.
-5. Retire old key per policy.
+This package provides `rotateHederaAccountKmsKey()` to execute the supported rotation workflow:
+1. Create (or reuse) replacement KMS secp256k1 signing key.
+2. Build `AccountUpdateTransaction` with the replacement public key.
+3. Co-sign update using current key and replacement key.
+4. Submit transaction and return new key metadata/fingerprint.
+5. Persist new key mapping and retire old key per policy.
+
+Minimal example:
+
+```ts
+import { rotateHederaAccountKmsKey } from "@workit/hedera-kms-wallet";
+
+const rotated = await rotateHederaAccountKmsKey({
+  userId: "user-123",
+  accountId: "0.0.12345",
+  currentKeyId: "old-kms-key-id",
+  policyBindings: {
+    accountId: process.env.AWS_ACCOUNT_ID!,
+    keyAdminPrincipalArn: process.env.KMS_KEY_ADMIN_PRINCIPAL_ARN!,
+    runtimeSignerPrincipalArn: process.env.KMS_RUNTIME_SIGNER_PRINCIPAL_ARN!
+  }
+});
+```
 
 ## Future Hardening
 
