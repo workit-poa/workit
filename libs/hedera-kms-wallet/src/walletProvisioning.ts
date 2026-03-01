@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { KMSClient } from "@aws-sdk/client-kms";
 import { AccountCreateTransaction, Hbar } from "@hashgraph/sdk";
 import { createUserKmsKey } from "./kmsKeyManager";
-import { addKmsSignatureToFrozenTransaction, createHederaClient, type HederaNetwork } from "./hederaClient";
+import {
+  addKmsSignatureToFrozenTransaction,
+  createHederaClient,
+  executeSignedTransaction,
+  type HederaNetwork
+} from "./hederaClient";
 import { createKmsHederaSigner } from "./kmsSigner";
 
 export interface ProvisionHederaAccountForUserParams {
@@ -95,9 +100,7 @@ export async function provisionHederaAccountForUser(
     accountCreateTx = await accountCreateTx.freezeWith(hederaClient);
 
     await addKmsSignatureToFrozenTransaction(accountCreateTx, signer);
-
-    const response = await accountCreateTx.execute(hederaClient);
-    const receipt = await response.getReceipt(hederaClient);
+    const { receipt } = await executeSignedTransaction(hederaClient, accountCreateTx);
     const accountId = receipt.accountId?.toString();
 
     if (!accountId) {

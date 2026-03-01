@@ -11,7 +11,6 @@ import {
   TransferTransaction
 } from "@hashgraph/sdk";
 import type { KmsHederaSigner } from "./kmsSigner";
-
 export type HederaNetwork = "testnet" | "mainnet";
 
 export interface WalletDetails {
@@ -44,8 +43,7 @@ function parseOperatorPrivateKey(operatorKey: string): PrivateKey {
   const hexValue = value.startsWith("0x") ? value.slice(2) : value;
   const isHex = /^[0-9a-fA-F]+$/.test(hexValue);
 
-  // PKCS8/DER-style keys from some wallets and portal exports.
-  if (isHex && (hexValue.startsWith("302e") || hexValue.startsWith("3030"))) {
+  if (isHex && PrivateKey.isDerKey(hexValue)) {
     return PrivateKey.fromStringDer(hexValue);
   }
 
@@ -100,37 +98,14 @@ export function createHederaClientFromEnv(): { client: Client; network: HederaNe
   };
 }
 
-function extractBodyBytes(transaction: Transaction): Uint8Array[] {
-  interface SignedTransactionLike {
-    bodyBytes?: Uint8Array;
-  }
-  interface SignedTransactionsLike {
-    list?: SignedTransactionLike[];
-  }
-
-  const signedTransactions = (
-    transaction as Transaction & {
-      _signedTransactions?: SignedTransactionsLike;
-    }
-  )._signedTransactions;
-
-  const list: SignedTransactionLike[] = signedTransactions?.list ?? [];
-  const bytes = list.map(item => item.bodyBytes).filter((value): value is Uint8Array => value !== undefined);
-
-  if (bytes.length === 0) {
-    throw new Error("No frozen transaction body bytes were found. Freeze transaction before signing.");
-  }
-
-  return bytes;
-}
-
 export async function addKmsSignatureToFrozenTransaction(transaction: Transaction, signer: KmsHederaSigner): Promise<void> {
-  const bodyBytes = extractBodyBytes(transaction);
-  const signatures = await Promise.all(bodyBytes.map(bytes => signer.sign(bytes)));
-  if (signatures.some(signature => signature.length !== 64)) {
-    throw new Error("Signer must return a 64-byte (r||s) secp256k1 signature");
-  }
-  transaction.addSignature(signer.hederaPublicKey, signatures.length === 1 ? signatures[0] : signatures);
+  await transaction.signWith(signer.hederaPublicKey, async bodyBytes => {
+    const signature = await signer.sign(bodyBytes);
+    if (signature.length !== 64) {
+      throw new Error("Signer must return a 64-byte (r||s) secp256k1 signature");
+    }
+    return signature;
+  });
 }
 
 export async function executeSignedTransaction<Tx extends Transaction>(

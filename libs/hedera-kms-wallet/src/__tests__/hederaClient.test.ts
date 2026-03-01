@@ -23,14 +23,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-type FakeSignedTransaction = Transaction & {
-  _signedTransactions: {
-    list: Array<{ bodyBytes?: Uint8Array }>;
-  };
-  addSignatureCalls: Array<[unknown, Uint8Array | Uint8Array[]]>;
-  addSignature(publicKey: unknown, signature: Uint8Array | Uint8Array[]): void;
-};
-
 function withEnv(vars: Record<string, string | undefined>, fn: () => Promise<void> | void): Promise<void> | void {
   const original: Record<string, string | undefined> = {};
 
@@ -209,30 +201,31 @@ test("getWalletDetails and mirrorLinkForTransaction return expected values", () 
 });
 
 test("addKmsSignatureToFrozenTransaction handles single and multiple body bytes", async () => {
-  const singleTx = {
-    _signedTransactions: { list: [{ bodyBytes: Uint8Array.from([1, 2, 3]) }] },
-    addSignatureCalls: [] as Array<[unknown, Uint8Array | Uint8Array[]]>,
-    addSignature(publicKey: unknown, signature: Uint8Array | Uint8Array[]) {
-      this.addSignatureCalls.push([publicKey, signature]);
-    }
-  } as FakeSignedTransaction;
-
+  const signWithCalls: Array<[unknown, Uint8Array[]]> = [];
   const signer = createSigner();
+  const singleTx = {
+    async signWith(publicKey: unknown, signFn: (message: Uint8Array) => Promise<Uint8Array>) {
+      const signature = await signFn(Uint8Array.from([1, 2, 3]));
+      signWithCalls.push([publicKey, [signature]]);
+      return this;
+    }
+  } as unknown as Transaction;
+
   await addKmsSignatureToFrozenTransaction(singleTx, signer);
-  assert.equal(singleTx.addSignatureCalls.length, 1);
-  const singleSignature = singleTx.addSignatureCalls[0][1] as Uint8Array;
+  assert.equal(signWithCalls.length, 1);
+  const singleSignature = signWithCalls[0][1][0];
   assert.equal(singleSignature.length, 64);
 
   const multiTx = {
-    _signedTransactions: { list: [{ bodyBytes: Uint8Array.from([4]) }, { bodyBytes: Uint8Array.from([5]) }] },
-    addSignatureCalls: [] as Array<[unknown, Uint8Array | Uint8Array[]]>,
-    addSignature(publicKey: unknown, signature: Uint8Array | Uint8Array[]) {
-      this.addSignatureCalls.push([publicKey, signature]);
+    async signWith(publicKey: unknown, signFn: (message: Uint8Array) => Promise<Uint8Array>) {
+      const signatures = await Promise.all([signFn(Uint8Array.from([4])), signFn(Uint8Array.from([5]))]);
+      signWithCalls.push([publicKey, signatures]);
+      return this;
     }
-  } as FakeSignedTransaction;
+  } as unknown as Transaction;
 
   await addKmsSignatureToFrozenTransaction(multiTx, signer);
-  const multiSignatures = multiTx.addSignatureCalls[0][1] as Uint8Array[];
+  const multiSignatures = signWithCalls[1][1];
   assert.equal(multiSignatures.length, 2);
   assert.equal(multiSignatures[0].length, 64);
   assert.equal(multiSignatures[1].length, 64);
@@ -241,19 +234,18 @@ test("addKmsSignatureToFrozenTransaction handles single and multiple body bytes"
 test("addKmsSignatureToFrozenTransaction validates frozen bytes and signature length", async () => {
   const signer = createSigner();
   const noBytesTx = {
-    _signedTransactions: { list: [] },
-    addSignature() {
-      throw new Error("should not be called");
+    async signWith() {
+      throw new Error("Freeze transaction before signing.");
     }
   } as unknown as Transaction;
 
-  await assert.rejects(() => addKmsSignatureToFrozenTransaction(noBytesTx, signer), /No frozen transaction body bytes were found/);
+  await assert.rejects(() => addKmsSignatureToFrozenTransaction(noBytesTx, signer), /Freeze transaction before signing/);
 
   const badSigner = createSigner({ sign: async () => Uint8Array.from([1, 2, 3]) });
   const tx = {
-    _signedTransactions: { list: [{ bodyBytes: Uint8Array.from([1]) }] },
-    addSignature() {
-      throw new Error("should not be called");
+    async signWith(_publicKey: unknown, signFn: (message: Uint8Array) => Promise<Uint8Array>) {
+      await signFn(Uint8Array.from([1]));
+      return this;
     }
   } as unknown as Transaction;
 
