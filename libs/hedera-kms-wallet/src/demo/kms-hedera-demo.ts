@@ -32,82 +32,85 @@ async function run(): Promise<void> {
   const { client, network, operatorId } = createHederaClientFromEnv();
   const kms = new KMSClient({ region: awsRegion });
 
-  const existingKeyId = process.env.KMS_KEY_ID;
-  const existingAccountId = process.env.HEDERA_USER_ACCOUNT_ID;
+  try {
+    const existingKeyId = process.env.KMS_KEY_ID;
+    const existingAccountId = process.env.HEDERA_USER_ACCOUNT_ID;
 
-  let keyId = existingKeyId;
-  let accountId = existingAccountId;
+    let keyId = existingKeyId;
+    let accountId = existingAccountId;
 
-  if (!keyId || !accountId) {
-    const provisioned = await provisionHederaAccountForUser({
-      userId,
-      existingKeyId,
-      awsRegion,
-      hederaNetwork: network,
-      operatorId,
-      operatorKey: process.env.OPERATOR_KEY || process.env.HEDERA_OPERATOR_KEY,
-      initialHbar: Number(process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR || 1)
-    });
+    if (!keyId || !accountId) {
+      const provisioned = await provisionHederaAccountForUser({
+        userId,
+        existingKeyId,
+        awsRegion,
+        hederaNetwork: network,
+        operatorId,
+        operatorKey: process.env.OPERATOR_KEY || process.env.HEDERA_OPERATOR_KEY,
+        initialHbar: Number(process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR || 1)
+      });
 
-    keyId = provisioned.keyId;
-    accountId = provisioned.accountId;
+      keyId = provisioned.keyId;
+      accountId = provisioned.accountId;
 
-    console.log("Provisioned managed wallet");
-    console.log(`  accountId: ${provisioned.accountId}`);
-    console.log(`  keyId: ${provisioned.keyId}`);
-    console.log(`  compressedPublicKey: ${provisioned.publicKeyCompressedHex}`);
-    console.log(`  fingerprint: ${provisioned.publicKeyFingerprint}`);
-    if (provisioned.rotationNote) {
-      console.log(`  rotationNote: ${provisioned.rotationNote}`);
+      console.log("Provisioned managed wallet");
+      console.log(`  accountId: ${provisioned.accountId}`);
+      console.log(`  keyId: ${provisioned.keyId}`);
+      console.log(`  compressedPublicKey: ${provisioned.publicKeyCompressedHex}`);
+      console.log(`  fingerprint: ${provisioned.publicKeyFingerprint}`);
+      if (provisioned.rotationNote) {
+        console.log(`  rotationNote: ${provisioned.rotationNote}`);
+      }
     }
-  }
 
-  if (!keyId || !accountId) {
-    throw new Error("Failed to resolve keyId/accountId for demo");
-  }
-
-  const signer = await createKmsHederaSigner(kms, keyId);
-
-  console.log("Loaded KMS-backed signer");
-  console.log(`  keyId: ${keyId}`);
-  console.log(`  accountId: ${accountId}`);
-  console.log(`  compressedPublicKey: ${signer.compressedPublicKey.toString("hex")}`);
-
-  if (demoMode === "transfer") {
-    const transferResult = await submitTinybarTransferWithKmsSignature({
-      client,
-      signer,
-      fromAccountId: accountId,
-      toAccountId: process.env.DEMO_TRANSFER_TO_ACCOUNT_ID || operatorId,
-      amountTinybar: transferTinybar,
-      network
-    });
-
-    console.log("Submitted transfer transaction with KMS signature");
-    console.log(`  txId: ${transferResult.transactionId}`);
-    console.log(`  status: ${transferResult.receiptStatus}`);
-    if (transferResult.mirrorLink) {
-      console.log(`  mirror: ${transferResult.mirrorLink}`);
+    if (!keyId || !accountId) {
+      throw new Error("Failed to resolve keyId/accountId for demo");
     }
-  } else {
-    const topicResult = await submitTopicMessageWithKmsSignature({
-      client,
-      signer,
-      topicMemo: "workit-kms-demo-topic",
-      message,
-      network
-    });
 
-    console.log("Submitted topic message transaction with KMS signature");
-    console.log(`  topicId: ${topicResult.topicId}`);
-    console.log(`  txId: ${topicResult.transactionId}`);
-    console.log(`  status: ${topicResult.receiptStatus}`);
-    if (topicResult.mirrorLink) {
-      console.log(`  mirror: ${topicResult.mirrorLink}`);
+    const signer = await createKmsHederaSigner(kms, keyId);
+
+    console.log("Loaded KMS-backed signer");
+    console.log(`  keyId: ${keyId}`);
+    console.log(`  accountId: ${accountId}`);
+    console.log(`  compressedPublicKey: ${signer.compressedPublicKey.toString("hex")}`);
+
+    if (demoMode === "transfer") {
+      const transferResult = await submitTinybarTransferWithKmsSignature({
+        client,
+        signer,
+        fromAccountId: accountId,
+        toAccountId: process.env.DEMO_TRANSFER_TO_ACCOUNT_ID || operatorId,
+        amountTinybar: transferTinybar,
+        network
+      });
+
+      console.log("Submitted transfer transaction with KMS signature");
+      console.log(`  txId: ${transferResult.transactionId}`);
+      console.log(`  status: ${transferResult.receiptStatus}`);
+      if (transferResult.mirrorLink) {
+        console.log(`  mirror: ${transferResult.mirrorLink}`);
+      }
+    } else {
+      const topicResult = await submitTopicMessageWithKmsSignature({
+        client,
+        signer,
+        topicMemo: "workit-kms-demo-topic",
+        message,
+        network
+      });
+
+      console.log("Submitted topic message transaction with KMS signature");
+      console.log(`  topicId: ${topicResult.topicId}`);
+      console.log(`  txId: ${topicResult.transactionId}`);
+      console.log(`  status: ${topicResult.receiptStatus}`);
+      if (topicResult.mirrorLink) {
+        console.log(`  mirror: ${topicResult.mirrorLink}`);
+      }
     }
+  } finally {
+    kms.destroy();
+    client.close();
   }
-
-  client.close();
 }
 
 run().catch(error => {
