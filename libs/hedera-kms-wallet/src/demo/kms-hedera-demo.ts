@@ -10,17 +10,18 @@ import {
 import { createKmsHederaSigner } from "../kmsSigner";
 
 let activeCleanup: (() => Promise<void>) | undefined;
+let interrupted = false;
 
 process.once("SIGINT", () => {
+  interrupted = true;
   console.error("\nSIGINT received, shutting down...");
-  process.exitCode = 130;
 
   if (!activeCleanup) {
-    process.exit(130);
+    process.exit(0);
   }
 
   void activeCleanup().finally(() => {
-    process.exit(130);
+    process.exit(0);
   });
 });
 
@@ -142,9 +143,10 @@ async function run(): Promise<void> {
 }
 
 run().catch(error => {
-  console.error("Demo failed:", error);
-
-  if (process.exitCode !== 130) {
-    process.exitCode = 1;
+  if (interrupted) {
+    return;
   }
+
+  console.error("Demo failed:", error);
+  process.exitCode = 1;
 });
