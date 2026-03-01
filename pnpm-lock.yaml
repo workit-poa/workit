@@ -131,6 +131,9 @@ importers:
       '@hashgraph/sdk':
         specifier: ^2.62.0
         version: 2.80.0(bn.js@5.2.1)(react-native@0.84.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))
+      '@noble/hashes':
+        specifier: ^1.7.1
+        version: 1.7.1
       '@workit/common':
         specifier: workspace:*
         version: link:../common

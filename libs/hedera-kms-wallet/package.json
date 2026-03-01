@@ -11,6 +11,7 @@
     "demo:kms-hedera": "tsx src/demo/kms-hedera-demo.ts"
   },
   "dependencies": {
+    "@noble/hashes": "^1.7.1",
     "@aws-sdk/client-kms": "^3.900.0",
     "@hashgraph/sdk": "^2.62.0",
     "@workit/common": "workspace:*",

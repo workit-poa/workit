@@ -1,14 +1,8 @@
 import { SignCommand, KMSClient } from "@aws-sdk/client-kms";
 import { PublicKey } from "@hashgraph/sdk";
-import path from "node:path";
+import { keccak_256 } from "@noble/hashes/sha3";
 import { compressPublicKey, kmsDerSignatureToHederaRaw64, spkiToUncompressedPublicKey } from "./hederaKeyCodec";
 import { getPublicKeyBytes } from "./kmsKeyManager";
-
-type Keccak256Fn = (message: string) => string;
-const sdkPackageJsonPath = require.resolve("@hashgraph/sdk/package.json");
-const { keccak256 } = require(path.join(path.dirname(sdkPackageJsonPath), "lib/cryptography/keccak.cjs")) as {
-  keccak256: Keccak256Fn;
-};
 
 export interface KmsHederaSigner {
   keyId: string;
@@ -27,8 +21,7 @@ export async function createKmsHederaSigner(kms: KMSClient, keyId: string): Prom
   const sign = async (message: Uint8Array): Promise<Uint8Array> => {
     // Hedera secp256k1 signatures are verified against keccak256(message).
     // KMS can't do keccak internally, so we provide the digest directly.
-    const digestHex = keccak256(`0x${Buffer.from(message).toString("hex")}`);
-    const digest = Buffer.from(digestHex.slice(2), "hex");
+    const digest = Buffer.from(keccak_256(message));
 
     if (digest.length !== 32) {
       throw new Error(`Unexpected keccak256 digest length: ${digest.length}`);
