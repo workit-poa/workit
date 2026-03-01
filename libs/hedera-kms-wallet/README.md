@@ -24,6 +24,7 @@ Trust boundaries:
 - Client/UI never receives private key material.
 - Backend runtime can only request `kms:Sign` and key metadata/public key reads.
 - KMS boundary enforces non-exportability of private keys.
+- New keys are created only with explicit key-policy bindings (or explicit unsafe override for local demos).
 
 ## Security Controls
 
@@ -34,6 +35,11 @@ Use separate IAM roles:
 - Runtime signer role: sign and read public key metadata only.
 
 Policy guidance is exposed by `kmsAccessPolicyGuidance()` in `src/kmsKeyManager.ts`.
+Key creation is enforced with explicit key policy input via:
+- `policyBindings` + `buildLeastPrivilegeKeyPolicy()`, or
+- `keyPolicy` for custom policy JSON.
+
+If neither is provided, key creation fails unless `allowUnsafeDefaultKeyPolicy=true` is explicitly set.
 
 Runtime role should allow only:
 - `kms:Sign`
@@ -67,6 +73,9 @@ Fields to verify for audit evidence:
 - `sourceIPAddress`
 - `awsRegion`
 
+Package-level audit hook:
+- Pass `auditLogger` to provisioning/key functions to emit structured operation events (`CreateKey`, `CreateAlias`, `DescribeKey`, `GetPublicKey`, `EnableKeyRotation`, `Sign`) into your SIEM/app logs.
+
 ## Bounty Requirement Mapping
 
 - Secure key generation/storage/rotation:
@@ -76,6 +85,7 @@ Fields to verify for audit evidence:
   - `src/demo/kms-hedera-demo.ts` submits a topic message or tinybar transfer on testnet.
 - Access controls + audit logging:
   - IAM policy templates via `kmsAccessPolicyGuidance()`.
+  - Enforced create-time key policy requirements in `createUserKmsKey()`.
   - CloudTrail verification section above.
 - Signing without private-key exposure:
   - `createKmsHederaSigner()` calls `kms:Sign`; only public key and signatures leave KMS.
@@ -88,6 +98,9 @@ Required environment variables:
 - AWS:
   - `AWS_REGION`
   - `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (or attach IAM role)
+  - `AWS_ACCOUNT_ID` (required when creating a new KMS key)
+  - `KMS_KEY_ADMIN_PRINCIPAL_ARN` (required when creating a new KMS key)
+  - `KMS_RUNTIME_SIGNER_PRINCIPAL_ARN` (required when creating a new KMS key)
 - Hedera:
   - `HEDERA_NETWORK=testnet`
   - `OPERATOR_ID` and `OPERATOR_KEY` (also supports `HEDERA_OPERATOR_ID`/`HEDERA_OPERATOR_KEY`)
@@ -96,6 +109,7 @@ Required environment variables:
   - `HEDERA_USER_ACCOUNT_ID` (reuse existing account)
   - `DEMO_MODE=topic` (default) or `DEMO_MODE=transfer`
   - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR=1` (required and must be `> 0` when provisioning a new demo account)
+  - `ALLOW_UNSAFE_KMS_DEFAULT_POLICY=true` (local-only escape hatch; insecure for production)
 
 Environment file location for demo:
 - Put env vars in `libs/hedera-kms-wallet/.env` (preferred for this package)
@@ -105,6 +119,7 @@ Environment file location for demo:
 Fail-fast behavior:
 - Demo validates `DEMO_MODE` and `DEMO_TRANSFER_TINYBAR` before running.
 - If provisioning a new account (missing `KMS_KEY_ID` or `HEDERA_USER_ACCOUNT_ID`), it fails early unless `HEDERA_NEW_ACCOUNT_INITIAL_HBAR > 0`.
+- If provisioning a new account, it also fails early unless secure key policy bindings are provided (`AWS_ACCOUNT_ID`, `KMS_KEY_ADMIN_PRINCIPAL_ARN`, `KMS_RUNTIME_SIGNER_PRINCIPAL_ARN`) or unsafe override is enabled.
 
 Run:
 
@@ -166,6 +181,10 @@ pnpm --filter @workit/hedera-kms-wallet pack
 - `kmsKeyId`
 - `hederaAccountId`
 - `hederaPublicKeyFingerprint`
+
+Security default:
+- Runtime flows should pass an `existingKeyId` and keep `allowKeyCreation=false`.
+- Admin provisioning flows can set `allowKeyCreation=true` with explicit `policyBindings`.
 
 ## Rotation Notes
 

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { KMSClient } from "@aws-sdk/client-kms";
 import { AccountCreateTransaction, Hbar } from "@hashgraph/sdk";
-import { createUserKmsKey } from "./kmsKeyManager";
+import { createUserKmsKey, type KmsAuditLogger, type KmsKeyPolicyBindings } from "./kmsKeyManager";
 import {
   addKmsSignatureToFrozenTransaction,
   createHederaClient,
@@ -20,6 +20,11 @@ export interface ProvisionHederaAccountForUserParams {
   aliasPrefix?: string;
   keyDescriptionPrefix?: string;
   existingKeyId?: string;
+  allowKeyCreation?: boolean;
+  keyPolicy?: Record<string, unknown>;
+  policyBindings?: KmsKeyPolicyBindings;
+  allowUnsafeDefaultKeyPolicy?: boolean;
+  auditLogger?: KmsAuditLogger;
 }
 
 export interface ProvisionedHederaWallet {
@@ -50,7 +55,12 @@ export async function provisionHederaAccountForUser(
     initialHbar,
     aliasPrefix = process.env.HEDERA_KMS_ALIAS_PREFIX || "alias/workit-user",
     keyDescriptionPrefix = process.env.HEDERA_KMS_KEY_DESCRIPTION_PREFIX || "Workit Hedera key for user",
-    existingKeyId
+    existingKeyId,
+    allowKeyCreation = false,
+    keyPolicy,
+    policyBindings,
+    allowUnsafeDefaultKeyPolicy = false,
+    auditLogger
   } = params;
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {
@@ -66,6 +76,12 @@ export async function provisionHederaAccountForUser(
   }
 
   const normalizedExistingKeyId = existingKeyId?.trim();
+  if (!normalizedExistingKeyId && !allowKeyCreation) {
+    throw new Error(
+      "existingKeyId is required unless allowKeyCreation=true. " +
+        "Provision keys in an admin workflow and pass existingKeyId for runtime flows."
+    );
+  }
 
   const kms = new KMSClient({ region: awsRegion });
   let hederaClient: ReturnType<typeof createHederaClient> | undefined;
@@ -83,10 +99,18 @@ export async function provisionHederaAccountForUser(
           kms,
           userId: normalizedUserId,
           descriptionPrefix: keyDescriptionPrefix,
-          aliasPrefix
+          aliasPrefix,
+          keyPolicy,
+          policyBindings,
+          allowUnsafeDefaultKeyPolicy,
+          auditLogger
         });
 
-    const signer = await createKmsHederaSigner(kms, createdKey.keyId);
+    const signer = await createKmsHederaSigner({
+      kms,
+      keyId: createdKey.keyId,
+      auditLogger
+    });
     hederaClient = createHederaClient({
       network: hederaNetwork,
       operatorId,
@@ -110,7 +134,7 @@ export async function provisionHederaAccountForUser(
     return {
       accountId,
       keyId: createdKey.keyId,
-      keyArn: createdKey.keyArn,
+      keyArn: createdKey.keyArn ?? signer.keyArn,
       aliasName: createdKey.aliasName,
       publicKeyCompressedHex: signer.compressedPublicKey.toString("hex"),
       publicKeyUncompressedHex: signer.uncompressedPublicKey.toString("hex"),

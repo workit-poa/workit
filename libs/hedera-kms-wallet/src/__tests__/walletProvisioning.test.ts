@@ -4,6 +4,7 @@ import { afterEach, test, vi } from "vitest";
 import {
   CreateAliasCommand,
   CreateKeyCommand,
+  DescribeKeyCommand,
   EnableKeyRotationCommand,
   GetPublicKeyCommand,
   KMSClient,
@@ -83,6 +84,18 @@ test("provisionHederaAccountForUser provisions a new key-backed account", async 
     if (command instanceof EnableKeyRotationCommand) {
       return {} as never;
     }
+    if (command instanceof DescribeKeyCommand) {
+      return {
+        KeyMetadata: {
+          KeyId: "kms-key-abc",
+          Arn: "arn:aws:kms:us-east-1:123456789012:key/kms-key-abc",
+          Enabled: true,
+          KeyState: "Enabled",
+          KeySpec: "ECC_SECG_P256K1",
+          KeyUsage: "SIGN_VERIFY"
+        }
+      } as never;
+    }
     if (command instanceof GetPublicKeyCommand) {
       return { PublicKey: fixture.spkiBytes } as never;
     }
@@ -109,7 +122,13 @@ test("provisionHederaAccountForUser provisions a new key-backed account", async 
     hederaNetwork: "testnet",
     operatorId: "0.0.2",
     operatorKey: PrivateKey.generateECDSA().toStringRaw(),
-    initialHbar: 1
+    initialHbar: 1,
+    allowKeyCreation: true,
+    policyBindings: {
+      accountId: "123456789012",
+      keyAdminPrincipalArn: "arn:aws:iam::123456789012:role/WorkitKmsKeyAdmin",
+      runtimeSignerPrincipalArn: "arn:aws:iam::123456789012:role/WorkitRuntimeSigner"
+    }
   });
 
   assert.equal(result.accountId, "0.0.9001");
@@ -121,13 +140,14 @@ test("provisionHederaAccountForUser provisions a new key-backed account", async 
   assert.equal(result.publicKeyFingerprint.length, 64);
   assert.equal(kmsDestroyed, 1);
   assert.equal(clientClosed, 1);
-  assert.deepEqual(sentCommands.slice(0, 4), [
+  assert.deepEqual(sentCommands.slice(0, 5), [
     "CreateKeyCommand",
     "CreateAliasCommand",
     "EnableKeyRotationCommand",
+    "DescribeKeyCommand",
     "GetPublicKeyCommand"
   ]);
-  assert.equal(sentCommands.slice(4).every(command => command === "SignCommand"), true);
+  assert.equal(sentCommands.slice(5).every(command => command === "SignCommand"), true);
   assert.equal(sentCommands.filter(command => command === "SignCommand").length > 0, true);
   assert.equal(setInitialBalanceSpy.mock.calls.length, 1);
 });
@@ -142,6 +162,18 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
 
     if (command instanceof CreateKeyCommand || command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
       throw new Error("new key creation should not run when existingKeyId is provided");
+    }
+    if (command instanceof DescribeKeyCommand) {
+      return {
+        KeyMetadata: {
+          KeyId: "existing-kms-key-id",
+          Arn: "arn:aws:kms:us-east-1:123456789012:key/existing-kms-key-id",
+          Enabled: true,
+          KeyState: "Enabled",
+          KeySpec: "ECC_SECG_P256K1",
+          KeyUsage: "SIGN_VERIFY"
+        }
+      } as never;
     }
     if (command instanceof GetPublicKeyCommand) {
       return { PublicKey: fixture.spkiBytes } as never;
@@ -173,12 +205,13 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
 
   assert.equal(result.accountId, "0.0.9002");
   assert.equal(result.keyId, "existing-kms-key-id");
-  assert.equal(result.keyArn, undefined);
+  assert.equal(result.keyArn, "arn:aws:kms:us-east-1:123456789012:key/existing-kms-key-id");
   assert.equal(result.aliasName, undefined);
   assert.equal(result.rotationEnabled, false);
   assert.match(result.rotationNote ?? "", /Existing key id was provided/);
-  assert.equal(sentCommands[0], "GetPublicKeyCommand");
-  assert.equal(sentCommands.slice(1).every(command => command === "SignCommand"), true);
+  assert.equal(sentCommands[0], "DescribeKeyCommand");
+  assert.equal(sentCommands[1], "GetPublicKeyCommand");
+  assert.equal(sentCommands.slice(2).every(command => command === "SignCommand"), true);
   assert.equal(sentCommands.filter(command => command === "SignCommand").length > 0, true);
   assert.equal(setInitialBalanceSpy.mock.calls.length, 0);
 });
@@ -189,6 +222,18 @@ test("provisionHederaAccountForUser reads config defaults from environment", asy
   vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
     if (command instanceof CreateKeyCommand || command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
       throw new Error("new key creation should not run when existingKeyId is provided");
+    }
+    if (command instanceof DescribeKeyCommand) {
+      return {
+        KeyMetadata: {
+          KeyId: "env-key-id",
+          Arn: "arn:aws:kms:us-east-1:123456789012:key/env-key-id",
+          Enabled: true,
+          KeyState: "Enabled",
+          KeySpec: "ECC_SECG_P256K1",
+          KeyUsage: "SIGN_VERIFY"
+        }
+      } as never;
     }
     if (command instanceof GetPublicKeyCommand) {
       return { PublicKey: fixture.spkiBytes } as never;
@@ -284,6 +329,17 @@ test("provisionHederaAccountForUser validates required inputs", async () => {
       }),
     /initialHbar must be a non-negative number when provided/
   );
+
+  await assert.rejects(
+    () =>
+      provisionHederaAccountForUser({
+        userId: "user-1",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw()
+      }),
+    /existingKeyId is required unless allowKeyCreation=true/
+  );
 });
 
 test("provisionHederaAccountForUser throws when account id is missing from receipt", async () => {
@@ -303,6 +359,18 @@ test("provisionHederaAccountForUser throws when account id is missing from recei
     }
     if (command instanceof EnableKeyRotationCommand) {
       return {} as never;
+    }
+    if (command instanceof DescribeKeyCommand) {
+      return {
+        KeyMetadata: {
+          KeyId: "kms-key-xyz",
+          Arn: "arn:aws:kms:us-east-1:123456789012:key/kms-key-xyz",
+          Enabled: true,
+          KeyState: "Enabled",
+          KeySpec: "ECC_SECG_P256K1",
+          KeyUsage: "SIGN_VERIFY"
+        }
+      } as never;
     }
     if (command instanceof GetPublicKeyCommand) {
       return { PublicKey: fixture.spkiBytes } as never;
@@ -326,7 +394,13 @@ test("provisionHederaAccountForUser throws when account id is missing from recei
         awsRegion: "us-east-1",
         hederaNetwork: "testnet",
         operatorId: "0.0.2",
-        operatorKey: PrivateKey.generateECDSA().toStringRaw()
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        allowKeyCreation: true,
+        policyBindings: {
+          accountId: "123456789012",
+          keyAdminPrincipalArn: "arn:aws:iam::123456789012:role/WorkitKmsKeyAdmin",
+          runtimeSignerPrincipalArn: "arn:aws:iam::123456789012:role/WorkitRuntimeSigner"
+        }
       }),
     /did not return an account id/
   );

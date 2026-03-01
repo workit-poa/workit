@@ -53,6 +53,7 @@ function createSigner(overrides?: Partial<KmsHederaSigner>): KmsHederaSigner {
 
   return {
     keyId: "kms-key",
+    keyArn: "arn:aws:kms:us-east-1:123456789012:key/kms-key",
     hederaPublicKey: privateKey.publicKey,
     uncompressedPublicKey: Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 0xaa)]),
     compressedPublicKey: Buffer.concat([Buffer.from([0x02]), Buffer.alloc(32, 0xbb)]),
