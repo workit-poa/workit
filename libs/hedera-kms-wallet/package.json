@@ -7,8 +7,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import tsx --test src/*.test.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "demo:kms-hedera": "tsx src/demo/kms-hedera-demo.ts"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@noble/hashes": "^1.7.1",

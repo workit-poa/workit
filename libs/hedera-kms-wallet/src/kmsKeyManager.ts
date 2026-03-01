@@ -1,12 +1,10 @@
 import {
   CreateAliasCommand,
   CreateKeyCommand,
-  DescribeKeyCommand,
   EnableKeyRotationCommand,
   GetPublicKeyCommand,
   KMSClient,
   type CreateKeyCommandInput,
-  type DescribeKeyCommandOutput,
   type KeyMetadata
 } from "@aws-sdk/client-kms";
 
@@ -27,8 +25,15 @@ export interface UserKmsKeyResult {
 }
 
 function normalizeAliasName(userId: string, aliasPrefix = "alias/workit/user"): string {
-  const prefix = aliasPrefix.startsWith("alias/") ? aliasPrefix : `alias/${aliasPrefix}`;
-  const normalizedUserId = userId.replace(/[^a-zA-Z0-9/_-]/g, "-");
+  const normalizedUserId = userId.replace(/[^a-zA-Z0-9/_-]/g, "-").replace(/-+/g, "-");
+
+  const trimmedAliasPrefix = aliasPrefix.trim();
+  if (!trimmedAliasPrefix) {
+    throw new Error("aliasPrefix is required");
+  }
+
+  const normalizedPrefix = trimmedAliasPrefix.replace(/^alias\/+/, "");
+  const prefix = `alias/${normalizedPrefix}`.replace(/\/+$/, "");
   return `${prefix}/${normalizedUserId}`;
 }
 
@@ -48,15 +53,19 @@ async function tryEnableRotation(kms: KMSClient, keyId: string): Promise<{ enabl
 
 export async function createUserKmsKey(params: CreateUserKmsKeyParams): Promise<UserKmsKeyResult> {
   const { kms, userId, descriptionPrefix = "Workit Hedera key for user", aliasPrefix = "alias/workit/user", tags } = params;
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    throw new Error("userId is required");
+  }
 
   const createResp = await kms.send(
     new CreateKeyCommand({
       KeySpec: "ECC_SECG_P256K1",
       KeyUsage: "SIGN_VERIFY",
-      Description: `${descriptionPrefix} ${userId}`,
+      Description: `${descriptionPrefix} ${normalizedUserId}`,
       Tags: tags ?? [
         { TagKey: "app", TagValue: "workit" },
-        { TagKey: "userId", TagValue: userId }
+        { TagKey: "userId", TagValue: normalizedUserId }
       ]
     })
   );
@@ -66,7 +75,7 @@ export async function createUserKmsKey(params: CreateUserKmsKeyParams): Promise<
     throw new Error("AWS KMS did not return key metadata");
   }
 
-  const aliasName = normalizeAliasName(userId, aliasPrefix);
+  const aliasName = normalizeAliasName(normalizedUserId, aliasPrefix);
   await kms.send(
     new CreateAliasCommand({
       AliasName: aliasName,
@@ -91,10 +100,6 @@ export async function getPublicKeyBytes(kms: KMSClient, keyId: string): Promise<
     throw new Error("KMS did not return public key bytes");
   }
   return Buffer.from(response.PublicKey);
-}
-
-export async function describeKey(kms: KMSClient, keyId: string): Promise<DescribeKeyCommandOutput> {
-  return kms.send(new DescribeKeyCommand({ KeyId: keyId }));
 }
 
 export function kmsAccessPolicyGuidance(keyArn = "arn:aws:kms:REGION:ACCOUNT_ID:key/KEY_ID") {

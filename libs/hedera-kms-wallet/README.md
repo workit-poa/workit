@@ -116,6 +116,20 @@ Expected output includes:
 - receipt status
 - mirror/hashscan link
 
+## Testing
+
+Run package tests (Vitest):
+
+```bash
+pnpm --filter @workit/hedera-kms-wallet test
+```
+
+Run coverage report:
+
+```bash
+pnpm --filter @workit/hedera-kms-wallet test:coverage
+```
+
 ## Integration With Workit Auth
 
 `libs/auth/src/wallet-provisioning.ts` should call `provisionHederaAccountForUser()` and persist:

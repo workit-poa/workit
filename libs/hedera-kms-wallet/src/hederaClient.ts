@@ -29,8 +29,9 @@ export interface HederaSubmitResult {
 }
 
 function parseNetwork(network?: string): HederaNetwork {
+  if (!network || network === "testnet") return "testnet";
   if (network === "mainnet") return "mainnet";
-  return "testnet";
+  throw new Error(`Unsupported HEDERA_NETWORK "${network}". Expected "testnet" or "mainnet".`);
 }
 
 function parseOperatorPrivateKey(operatorKey: string): PrivateKey {
@@ -121,6 +122,9 @@ function extractBodyBytes(transaction: Transaction): Uint8Array[] {
 export async function addKmsSignatureToFrozenTransaction(transaction: Transaction, signer: KmsHederaSigner): Promise<void> {
   const bodyBytes = extractBodyBytes(transaction);
   const signatures = await Promise.all(bodyBytes.map(bytes => signer.sign(bytes)));
+  if (signatures.some(signature => signature.length !== 64)) {
+    throw new Error("Signer must return a 64-byte (r||s) secp256k1 signature");
+  }
   transaction.addSignature(signer.hederaPublicKey, signatures.length === 1 ? signatures[0] : signatures);
 }
 
@@ -183,8 +187,8 @@ export async function submitTinybarTransferWithKmsSignature(params: {
 }): Promise<HederaSubmitResult> {
   const { client, signer, fromAccountId, toAccountId, amountTinybar, network = "testnet" } = params;
 
-  if (amountTinybar <= 0) {
-    throw new Error("amountTinybar must be greater than zero");
+  if (!Number.isSafeInteger(amountTinybar) || amountTinybar <= 0) {
+    throw new Error("amountTinybar must be a positive safe integer");
   }
 
   const tx = await new TransferTransaction()
@@ -206,5 +210,8 @@ export async function submitTinybarTransferWithKmsSignature(params: {
 }
 
 export function mirrorLinkForTransaction(network: HederaNetwork, transactionId: string): string {
+  if (!transactionId.trim()) {
+    throw new Error("transactionId is required");
+  }
   return `https://hashscan.io/${network}/transaction/${encodeURIComponent(transactionId)}`;
 }

@@ -13,7 +13,12 @@ export interface KmsHederaSigner {
 }
 
 export async function createKmsHederaSigner(kms: KMSClient, keyId: string): Promise<KmsHederaSigner> {
-  const spkiBytes = await getPublicKeyBytes(kms, keyId);
+  const normalizedKeyId = keyId.trim();
+  if (!normalizedKeyId) {
+    throw new Error("keyId is required");
+  }
+
+  const spkiBytes = await getPublicKeyBytes(kms, normalizedKeyId);
   const uncompressedPublicKey = spkiToUncompressedPublicKey(spkiBytes);
   const compressedPublicKey = compressPublicKey(uncompressedPublicKey);
   const hederaPublicKey = PublicKey.fromBytesECDSA(compressedPublicKey);
@@ -23,13 +28,9 @@ export async function createKmsHederaSigner(kms: KMSClient, keyId: string): Prom
     // KMS can't do keccak internally, so we provide the digest directly.
     const digest = Buffer.from(keccak_256(message));
 
-    if (digest.length !== 32) {
-      throw new Error(`Unexpected keccak256 digest length: ${digest.length}`);
-    }
-
     const response = await kms.send(
       new SignCommand({
-        KeyId: keyId,
+        KeyId: normalizedKeyId,
         Message: digest,
         MessageType: "DIGEST",
         SigningAlgorithm: "ECDSA_SHA_256"
@@ -44,7 +45,7 @@ export async function createKmsHederaSigner(kms: KMSClient, keyId: string): Prom
   };
 
   return {
-    keyId,
+    keyId: normalizedKeyId,
     hederaPublicKey,
     uncompressedPublicKey,
     compressedPublicKey,

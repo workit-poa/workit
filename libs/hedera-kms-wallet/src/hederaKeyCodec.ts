@@ -4,13 +4,28 @@ const SECP256K1_N = BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBF
 const SECP256K1_HALF_N = SECP256K1_N / 2n;
 
 function leftPad32(bytes: Buffer): Buffer {
-  if (bytes.length > 32) {
-    throw new Error(`Expected <= 32 bytes but got ${bytes.length}`);
-  }
   if (bytes.length === 32) {
     return bytes;
   }
   return Buffer.concat([Buffer.alloc(32 - bytes.length, 0), bytes]);
+}
+
+function bigIntToBuffer(value: bigint): Buffer {
+  const hex = value.toString(16);
+  return Buffer.from(hex.length % 2 === 0 ? hex : `0${hex}`, "hex");
+}
+
+function parseScalar(bytes: Buffer, fieldName: "r" | "s"): bigint {
+  if (bytes.length === 0 || bytes.length > 32) {
+    throw new Error(`Invalid ${fieldName} scalar length: ${bytes.length}`);
+  }
+
+  const value = BigInt(`0x${bytes.toString("hex")}`);
+  if (value <= 0n || value >= SECP256K1_N) {
+    throw new Error(`Invalid ${fieldName} scalar range`);
+  }
+
+  return value;
 }
 
 export function spkiToUncompressedPublicKey(spkiDerBytes: Uint8Array): Buffer {
@@ -86,11 +101,22 @@ export function derSigToRS(der: Buffer): { r: Buffer; s: Buffer } {
     }
 
     const len = readLength();
+    if (len === 0) {
+      throw new Error("Invalid DER signature: empty INTEGER");
+    }
+
     const value = der.subarray(offset, offset + len);
     if (value.length !== len) {
       throw new Error("Invalid DER signature: truncated INTEGER");
     }
     offset += len;
+
+    if ((value[0] & 0x80) !== 0) {
+      throw new Error("Invalid DER signature: negative INTEGER");
+    }
+    if (value.length > 1 && value[0] === 0x00 && (value[1] & 0x80) === 0) {
+      throw new Error("Invalid DER signature: non-canonical INTEGER encoding");
+    }
 
     // Trim optional sign byte if present.
     return value[0] === 0x00 ? value.subarray(1) : value;
@@ -103,6 +129,9 @@ export function derSigToRS(der: Buffer): { r: Buffer; s: Buffer } {
 
   const seqLen = readLength();
   const seqEnd = offset + seqLen;
+  if (seqEnd > der.length) {
+    throw new Error("Invalid DER signature: truncated SEQUENCE");
+  }
 
   const r = readInteger();
   const s = readInteger();
@@ -118,15 +147,14 @@ export function derSigToRS(der: Buffer): { r: Buffer; s: Buffer } {
 }
 
 export function normalizeS(s: Buffer): Buffer {
-  const sBigInt = BigInt(`0x${s.toString("hex") || "0"}`);
+  const sBigInt = parseScalar(s, "s");
   const normalized = sBigInt > SECP256K1_HALF_N ? SECP256K1_N - sBigInt : sBigInt;
-  const hex = normalized.toString(16).padStart(64, "0");
-  return Buffer.from(hex, "hex");
+  return leftPad32(bigIntToBuffer(normalized));
 }
 
 export function rsToRaw64(r: Buffer, s: Buffer): Buffer {
-  const normalizedR = leftPad32(r);
-  const normalizedS = leftPad32(normalizeS(s));
+  const normalizedR = leftPad32(bigIntToBuffer(parseScalar(r, "r")));
+  const normalizedS = normalizeS(s);
   return Buffer.concat([normalizedR, normalizedS]);
 }
 
