@@ -2,6 +2,7 @@ import {
   AccountId,
   Client,
   Hbar,
+  PrivateKey,
   TopicCreateTransaction,
   TopicMessageSubmitTransaction,
   Transaction,
@@ -32,10 +33,44 @@ function parseNetwork(network?: string): HederaNetwork {
   return "testnet";
 }
 
+function parseOperatorPrivateKey(operatorKey: string): PrivateKey {
+  const value = operatorKey.trim();
+  const hexValue = value.startsWith("0x") ? value.slice(2) : value;
+  const isHex = /^[0-9a-fA-F]+$/.test(hexValue);
+
+  // PKCS8/DER-style keys from some wallets and portal exports.
+  if (isHex && (hexValue.startsWith("302e") || hexValue.startsWith("3030"))) {
+    return PrivateKey.fromStringDer(hexValue);
+  }
+
+  const explicitType = process.env.OPERATOR_KEY_TYPE?.toLowerCase();
+  if (explicitType === "ecdsa" || explicitType === "secp256k1") {
+    return PrivateKey.fromStringECDSA(hexValue);
+  }
+  if (explicitType === "ed25519") {
+    return PrivateKey.fromStringED25519(hexValue);
+  }
+  if (explicitType === "der") {
+    return PrivateKey.fromStringDer(hexValue);
+  }
+
+  if (isHex) {
+    // Prefer ECDSA first to match secp256k1 wallet flow used in this project.
+    try {
+      return PrivateKey.fromStringECDSA(hexValue);
+    } catch {
+      return PrivateKey.fromStringED25519(hexValue);
+    }
+  }
+
+  // Non-hex formats (mnemonic/legacy encodings) still require generic parsing.
+  return PrivateKey.fromString(value);
+}
+
 export function createHederaClient(config: HederaOperatorConfig): Client {
   const network = parseNetwork(config.network);
   const client = network === "mainnet" ? Client.forMainnet() : Client.forTestnet();
-  client.setOperator(config.operatorId, config.operatorKey);
+  client.setOperator(AccountId.fromString(config.operatorId), parseOperatorPrivateKey(config.operatorKey));
   return client;
 }
 
