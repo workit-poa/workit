@@ -34,8 +34,9 @@ Required environment variables:
 - `AWS_REGION`
 - `HEDERA_NETWORK` (`testnet` or `mainnet`)
 - `OPERATOR_ID` / `OPERATOR_KEY` (or backward-compatible `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY`)
-- `HEDERA_NEW_ACCOUNT_INITIAL_HBAR` (default `1`)
-- `HEDERA_KMS_CREATE_ALIAS` (default `true`)
+- `AWS_ACCOUNT_ID`
+- `KMS_KEY_ADMIN_PRINCIPAL_ARN`
+- `KMS_RUNTIME_SIGNER_PRINCIPAL_ARN`
 - `HEDERA_KMS_ALIAS_PREFIX` (default `alias/workit-user`)
 - `HEDERA_KMS_KEY_DESCRIPTION_PREFIX`
 

@@ -170,6 +170,7 @@ async function run(): Promise<void> {
         fromAccountId: accountId,
         toAccountId: process.env.DEMO_TRANSFER_TO_ACCOUNT_ID || operatorId,
         amountTinybar: transferTinybar,
+        payerAccountId: accountId,
         network
       });
 
@@ -185,6 +186,7 @@ async function run(): Promise<void> {
         signer,
         topicMemo: "workit-kms-demo-topic",
         message,
+        payerAccountId: accountId,
         network
       });
 

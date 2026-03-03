@@ -3,6 +3,7 @@ import {
   Client,
   Hbar,
   PrivateKey,
+  TransactionId,
   TopicCreateTransaction,
   TopicMessageSubmitTransaction,
   Transaction,
@@ -122,14 +123,17 @@ export async function submitTopicMessageWithKmsSignature(params: {
   signer: KmsHederaSigner;
   topicMemo?: string;
   message: string;
+  payerAccountId?: string;
   network?: HederaNetwork;
 }): Promise<HederaSubmitResult & { topicId: string }> {
-  const { client, signer, message, topicMemo, network = "testnet" } = params;
+  const { client, signer, message, topicMemo, payerAccountId, network = "testnet" } = params;
+  const normalizedPayerAccountId = payerAccountId?.trim();
 
-  const createTopicTx = await new TopicCreateTransaction()
-    .setTopicMemo(topicMemo ?? "workit-kms-demo-topic")
-    .setSubmitKey(signer.hederaPublicKey)
-    .freezeWith(client);
+  let createTopicTx = new TopicCreateTransaction().setTopicMemo(topicMemo ?? "workit-kms-demo-topic").setSubmitKey(signer.hederaPublicKey);
+  if (normalizedPayerAccountId) {
+    createTopicTx = createTopicTx.setTransactionId(TransactionId.generate(AccountId.fromString(normalizedPayerAccountId)));
+  }
+  createTopicTx = await createTopicTx.freezeWith(client);
 
   await addKmsSignatureToFrozenTransaction(createTopicTx, signer);
   const { response: topicCreateResponse, receipt: topicCreateReceipt } = await executeSignedTransaction(client, createTopicTx);
@@ -139,10 +143,11 @@ export async function submitTopicMessageWithKmsSignature(params: {
     throw new Error("Topic creation did not return a topic id");
   }
 
-  const submitMessageTx = await new TopicMessageSubmitTransaction()
-    .setTopicId(topicId)
-    .setMessage(message)
-    .freezeWith(client);
+  let submitMessageTx = new TopicMessageSubmitTransaction().setTopicId(topicId).setMessage(message);
+  if (normalizedPayerAccountId) {
+    submitMessageTx = submitMessageTx.setTransactionId(TransactionId.generate(AccountId.fromString(normalizedPayerAccountId)));
+  }
+  submitMessageTx = await submitMessageTx.freezeWith(client);
 
   await addKmsSignatureToFrozenTransaction(submitMessageTx, signer);
   const { response, receipt } = await executeSignedTransaction(client, submitMessageTx);
@@ -163,18 +168,23 @@ export async function submitTinybarTransferWithKmsSignature(params: {
   fromAccountId: string;
   toAccountId: string;
   amountTinybar: number;
+  payerAccountId?: string;
   network?: HederaNetwork;
 }): Promise<HederaSubmitResult> {
-  const { client, signer, fromAccountId, toAccountId, amountTinybar, network = "testnet" } = params;
+  const { client, signer, fromAccountId, toAccountId, amountTinybar, payerAccountId, network = "testnet" } = params;
+  const normalizedPayerAccountId = payerAccountId?.trim();
 
   if (!Number.isSafeInteger(amountTinybar) || amountTinybar <= 0) {
     throw new Error("amountTinybar must be a positive safe integer");
   }
 
-  const tx = await new TransferTransaction()
+  let tx = new TransferTransaction()
     .addHbarTransfer(AccountId.fromString(fromAccountId), Hbar.fromTinybars(-amountTinybar))
-    .addHbarTransfer(AccountId.fromString(toAccountId), Hbar.fromTinybars(amountTinybar))
-    .freezeWith(client);
+    .addHbarTransfer(AccountId.fromString(toAccountId), Hbar.fromTinybars(amountTinybar));
+  if (normalizedPayerAccountId) {
+    tx = tx.setTransactionId(TransactionId.generate(AccountId.fromString(normalizedPayerAccountId)));
+  }
+  tx = await tx.freezeWith(client);
 
   await addKmsSignatureToFrozenTransaction(tx, signer);
   const { response, receipt } = await executeSignedTransaction(client, tx);
