@@ -63,22 +63,6 @@ function parsePositiveSafeInteger(name: string, value: string | undefined, fallb
   return parsed;
 }
 
-function parseBoolean(name: string, value: string | undefined, fallback = false): boolean {
-  if (value === undefined || value.trim() === "") {
-    return fallback;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "true" || normalized === "1" || normalized === "yes") {
-    return true;
-  }
-  if (normalized === "false" || normalized === "0" || normalized === "no") {
-    return false;
-  }
-
-  throw new Error(`${name} must be a boolean value (true/false).`);
-}
-
 async function run(): Promise<void> {
   loadEnvForDemo();
 
@@ -119,11 +103,6 @@ async function run(): Promise<void> {
           "Set HEDERA_NEW_ACCOUNT_INITIAL_HBAR or provide both KMS_KEY_ID and HEDERA_USER_ACCOUNT_ID for an already funded account."
       );
     }
-    const allowUnsafeDefaultKeyPolicy = parseBoolean(
-      "ALLOW_UNSAFE_KMS_DEFAULT_POLICY",
-      process.env.ALLOW_UNSAFE_KMS_DEFAULT_POLICY,
-      false
-    );
     const policyBindings = willProvisionNewAccount
       ? {
           accountId: (process.env.AWS_ACCOUNT_ID || "").trim(),
@@ -132,11 +111,11 @@ async function run(): Promise<void> {
         }
       : undefined;
 
-    if (willProvisionNewAccount && !allowUnsafeDefaultKeyPolicy) {
+    if (willProvisionNewAccount) {
       if (!policyBindings?.accountId || !policyBindings.keyAdminPrincipalArn || !policyBindings.runtimeSignerPrincipalArn) {
         throw new Error(
           "Missing key policy bindings for secure key creation. Set AWS_ACCOUNT_ID, KMS_KEY_ADMIN_PRINCIPAL_ARN, " +
-            "and KMS_RUNTIME_SIGNER_PRINCIPAL_ARN, or set ALLOW_UNSAFE_KMS_DEFAULT_POLICY=true for local-only demos."
+            "and KMS_RUNTIME_SIGNER_PRINCIPAL_ARN."
         );
       }
     }
@@ -154,8 +133,7 @@ async function run(): Promise<void> {
         operatorKey: process.env.OPERATOR_KEY || process.env.HEDERA_OPERATOR_KEY,
         initialHbar,
         allowKeyCreation: true,
-        policyBindings,
-        allowUnsafeDefaultKeyPolicy
+        policyBindings
       });
 
       keyId = provisioned.keyId;

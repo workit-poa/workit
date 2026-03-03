@@ -24,7 +24,8 @@ Trust boundaries:
 - Client/UI never receives private key material.
 - Backend runtime can only request `kms:Sign` and key metadata/public key reads.
 - KMS boundary enforces non-exportability of private keys.
-- New keys are created only with explicit key-policy bindings (or explicit unsafe override for local demos).
+- New keys are created only with explicit least-privilege `policyBindings`.
+- Existing/replacement key usage is verified against KMS tags (`app=workit`, `userId=<owner>`).
 
 ## Security Controls
 
@@ -36,29 +37,15 @@ Use separate IAM roles:
 
 Policy guidance is exposed by `kmsAccessPolicyGuidance()` in `src/kmsKeyManager.ts`.
 Key creation is enforced with explicit key policy input via:
-- `policyBindings` + `buildLeastPrivilegeKeyPolicy()`, or
-- `keyPolicy` for custom policy JSON.
+- `policyBindings` + `buildLeastPrivilegeKeyPolicy()`.
 
-If neither is provided, key creation fails unless `allowUnsafeDefaultKeyPolicy=true` is explicitly set.
-
-### `allowUnsafeDefaultKeyPolicy` implications
-
-`allowUnsafeDefaultKeyPolicy=true` allows KMS key creation without enforcing an explicit least-privilege key policy in this package.
-
-Security impact:
-- You lose create-time guarantees that only designated admin/signer principals can manage and use the key.
-- Access scope may drift to broader defaults than intended for production.
-- Runtime and administration boundaries become policy-dependent outside this package's checks.
-
-Use guidance:
-- Production/staging: keep `allowUnsafeDefaultKeyPolicy=false`.
-- Provide `policyBindings` (recommended) or explicit `keyPolicy` for all key-creation flows.
-- Use `allowUnsafeDefaultKeyPolicy=true` only for local demos/sandbox experiments where key isolation is not a security boundary.
+Custom `keyPolicy` overrides and `allowUnsafeDefaultKeyPolicy` bypasses are rejected.
 
 Runtime role should allow only:
 - `kms:Sign`
 - `kms:GetPublicKey`
 - `kms:DescribeKey`
+- `kms:ListResourceTags`
 
 Resource scope:
 - Restrict to specific key ARN(s), never `*`.
@@ -88,7 +75,7 @@ Fields to verify for audit evidence:
 - `awsRegion`
 
 Package-level audit hook:
-- Pass `auditLogger` to provisioning/key functions to emit structured operation events (`CreateKey`, `CreateAlias`, `DescribeKey`, `GetPublicKey`, `EnableKeyRotation`, `Sign`) into your SIEM/app logs.
+- Pass `auditLogger` to provisioning/key functions to emit structured operation events (`CreateKey`, `CreateAlias`, `DescribeKey`, `GetPublicKey`, `ListResourceTags`, `EnableKeyRotation`, `Sign`, `ProvisionAccount`, `RotateAccountKey`) into your SIEM/app logs.
 
 ## Bounty Requirement Mapping
 
@@ -124,7 +111,6 @@ Required environment variables:
   - `HEDERA_USER_ACCOUNT_ID` (reuse existing account)
   - `DEMO_MODE=topic` (default) or `DEMO_MODE=transfer`
   - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR=1` (required and must be `> 0` when provisioning a new demo account)
-  - `ALLOW_UNSAFE_KMS_DEFAULT_POLICY=true` (local-only escape hatch; insecure for production)
 
 Environment file location for demo:
 - Put env vars in `libs/hedera-kms-wallet/.env` (preferred for this package)
@@ -134,7 +120,7 @@ Environment file location for demo:
 Fail-fast behavior:
 - Demo validates `DEMO_MODE` and `DEMO_TRANSFER_TINYBAR` before running.
 - If provisioning a new account (missing `KMS_KEY_ID` or `HEDERA_USER_ACCOUNT_ID`), it fails early unless `HEDERA_NEW_ACCOUNT_INITIAL_HBAR > 0`.
-- If provisioning a new account, it also fails early unless secure key policy bindings are provided (`AWS_ACCOUNT_ID`, `KMS_KEY_ADMIN_PRINCIPAL_ARN`, `KMS_RUNTIME_SIGNER_PRINCIPAL_ARN`) or unsafe override is enabled.
+- If provisioning a new account, it also fails early unless secure key policy bindings are provided (`AWS_ACCOUNT_ID`, `KMS_KEY_ADMIN_PRINCIPAL_ARN`, `KMS_RUNTIME_SIGNER_PRINCIPAL_ARN`).
 
 Run:
 

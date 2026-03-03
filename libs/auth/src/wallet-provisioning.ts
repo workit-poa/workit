@@ -47,8 +47,7 @@ export async function provisionManagedWalletForUser(userId: string): Promise<Pro
     aliasPrefix: process.env.HEDERA_KMS_ALIAS_PREFIX || "alias/workit-user",
     keyDescriptionPrefix: process.env.HEDERA_KMS_KEY_DESCRIPTION_PREFIX || "Workit Hedera key for user",
     allowKeyCreation: true,
-    policyBindings,
-    allowUnsafeDefaultKeyPolicy: false
+    policyBindings
   });
 
   return {

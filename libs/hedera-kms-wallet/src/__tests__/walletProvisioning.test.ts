@@ -8,6 +8,7 @@ import {
   EnableKeyRotationCommand,
   GetPublicKeyCommand,
   KMSClient,
+  ListResourceTagsCommand,
   SignCommand
 } from "@aws-sdk/client-kms";
 import { AccountCreateTransaction, AccountUpdateTransaction, Client, PrivateKey } from "@hashgraph/sdk";
@@ -84,6 +85,14 @@ test("provisionHederaAccountForUser provisions a new key-backed account", async 
     if (command instanceof EnableKeyRotationCommand) {
       return {} as never;
     }
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "user:wallet-1" }
+        ]
+      } as never;
+    }
     if (command instanceof DescribeKeyCommand) {
       return {
         KeyMetadata: {
@@ -140,14 +149,15 @@ test("provisionHederaAccountForUser provisions a new key-backed account", async 
   assert.equal(result.publicKeyFingerprint.length, 64);
   assert.equal(kmsDestroyed, 1);
   assert.equal(clientClosed, 1);
-  assert.deepEqual(sentCommands.slice(0, 5), [
+  assert.deepEqual(sentCommands.slice(0, 6), [
     "CreateKeyCommand",
     "CreateAliasCommand",
     "EnableKeyRotationCommand",
+    "ListResourceTagsCommand",
     "DescribeKeyCommand",
     "GetPublicKeyCommand"
   ]);
-  assert.equal(sentCommands.slice(5).every(command => command === "SignCommand"), true);
+  assert.equal(sentCommands.slice(6).every(command => command === "SignCommand"), true);
   assert.equal(sentCommands.filter(command => command === "SignCommand").length > 0, true);
   assert.equal(setInitialBalanceSpy.mock.calls.length, 1);
 });
@@ -162,6 +172,14 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
 
     if (command instanceof CreateKeyCommand || command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
       throw new Error("new key creation should not run when existingKeyId is provided");
+    }
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "existing-user" }
+        ]
+      } as never;
     }
     if (command instanceof DescribeKeyCommand) {
       return {
@@ -209,9 +227,10 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
   assert.equal(result.aliasName, undefined);
   assert.equal(result.rotationEnabled, false);
   assert.match(result.rotationNote ?? "", /Existing key id was provided/);
-  assert.equal(sentCommands[0], "DescribeKeyCommand");
-  assert.equal(sentCommands[1], "GetPublicKeyCommand");
-  assert.equal(sentCommands.slice(2).every(command => command === "SignCommand"), true);
+  assert.equal(sentCommands[0], "ListResourceTagsCommand");
+  assert.equal(sentCommands[1], "DescribeKeyCommand");
+  assert.equal(sentCommands[2], "GetPublicKeyCommand");
+  assert.equal(sentCommands.slice(3).every(command => command === "SignCommand"), true);
   assert.equal(sentCommands.filter(command => command === "SignCommand").length > 0, true);
   assert.equal(setInitialBalanceSpy.mock.calls.length, 0);
 });
@@ -222,6 +241,14 @@ test("provisionHederaAccountForUser reads config defaults from environment", asy
   vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
     if (command instanceof CreateKeyCommand || command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
       throw new Error("new key creation should not run when existingKeyId is provided");
+    }
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "env-user" }
+        ]
+      } as never;
     }
     if (command instanceof DescribeKeyCommand) {
       return {
@@ -340,6 +367,44 @@ test("provisionHederaAccountForUser validates required inputs", async () => {
       }),
     /existingKeyId is required unless allowKeyCreation=true/
   );
+
+  await assert.rejects(
+    () =>
+      provisionHederaAccountForUser({
+        userId: "user-1",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        allowKeyCreation: true
+      }),
+    /policyBindings is required when creating a new key/
+  );
+
+  await assert.rejects(
+    () =>
+      provisionHederaAccountForUser({
+        userId: "user-1",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        existingKeyId: "key-id",
+        keyPolicy: { Version: "2012-10-17", Statement: [] }
+      }),
+    /keyPolicy is no longer supported/
+  );
+
+  await assert.rejects(
+    () =>
+      provisionHederaAccountForUser({
+        userId: "user-1",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        existingKeyId: "key-id",
+        allowUnsafeDefaultKeyPolicy: true
+      }),
+    /allowUnsafeDefaultKeyPolicy is no longer supported/
+  );
 });
 
 test("rotateHederaAccountKmsKey creates a replacement key and submits account update", async () => {
@@ -373,6 +438,14 @@ test("rotateHederaAccountKmsKey creates a replacement key and submits account up
     }
     if (command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
       return {} as never;
+    }
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "rotate-user-1" }
+        ]
+      } as never;
     }
     if (command instanceof DescribeKeyCommand) {
       const keyId = String(command.input.KeyId);
@@ -463,6 +536,14 @@ test("rotateHederaAccountKmsKey supports using an existing replacement key id", 
 
     if (command instanceof CreateKeyCommand || command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
       throw new Error("new key creation should not run when replacementKeyId is provided");
+    }
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "rotate-user-2" }
+        ]
+      } as never;
     }
     if (command instanceof DescribeKeyCommand) {
       const keyId = String(command.input.KeyId);
@@ -582,6 +663,49 @@ test("rotateHederaAccountKmsKey validates required inputs", async () => {
       }),
     /Missing operator credentials/
   );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        accountId: "0.0.1",
+        currentKeyId: "kms-key-current",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw()
+      }),
+    /policyBindings is required when creating a replacement key/
+  );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        accountId: "0.0.1",
+        currentKeyId: "kms-key-current",
+        replacementKeyId: "kms-key-next",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        keyPolicy: { Version: "2012-10-17", Statement: [] }
+      }),
+    /keyPolicy is no longer supported/
+  );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        accountId: "0.0.1",
+        currentKeyId: "kms-key-current",
+        replacementKeyId: "kms-key-next",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        allowUnsafeDefaultKeyPolicy: true
+      }),
+    /allowUnsafeDefaultKeyPolicy is no longer supported/
+  );
 });
 
 test("provisionHederaAccountForUser throws when account id is missing from receipt", async () => {
@@ -601,6 +725,14 @@ test("provisionHederaAccountForUser throws when account id is missing from recei
     }
     if (command instanceof EnableKeyRotationCommand) {
       return {} as never;
+    }
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "user-2" }
+        ]
+      } as never;
     }
     if (command instanceof DescribeKeyCommand) {
       return {
@@ -645,5 +777,43 @@ test("provisionHederaAccountForUser throws when account id is missing from recei
         }
       }),
     /did not return an account id/
+  );
+});
+
+test("provisionHederaAccountForUser denies mismatched key ownership and emits audit failure", async () => {
+  const auditEvents: Array<{ operation: string; status: string; detail?: string }> = [];
+
+  vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "other-user" }
+        ]
+      } as never;
+    }
+    throw new Error("Unexpected command");
+  });
+
+  await assert.rejects(
+    () =>
+      provisionHederaAccountForUser({
+        userId: "expected-user",
+        awsRegion: "us-east-1",
+        hederaNetwork: "testnet",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        existingKeyId: "existing-kms-key-id",
+        auditLogger: event => auditEvents.push({ operation: event.operation, status: event.status, detail: event.detail })
+      }),
+    /expected "expected-user"/
+  );
+  assert.equal(
+    auditEvents.some(event => event.operation === "ListResourceTags" && event.status === "failure"),
+    true
+  );
+  assert.equal(
+    auditEvents.some(event => event.operation === "ProvisionAccount" && event.status === "failure"),
+    true
   );
 });

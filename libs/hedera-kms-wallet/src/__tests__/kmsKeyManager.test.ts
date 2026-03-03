@@ -6,9 +6,11 @@ import {
   DescribeKeyCommand,
   EnableKeyRotationCommand,
   GetPublicKeyCommand,
+  ListResourceTagsCommand,
   type KMSClient
 } from "@aws-sdk/client-kms";
 import {
+  assertKmsKeyOwnershipForUser,
   buildLeastPrivilegeKeyPolicy,
   createUserKmsKey,
   getPublicKeyBytes,
@@ -229,35 +231,25 @@ test("createUserKmsKey validates required inputs and metadata", async () => {
     Version: "2012-10-17",
     Statement: []
   };
-  await createUserKmsKey({
-    kms: explicitPolicyKms,
-    userId: "user-789",
-    keyPolicy: explicitPolicy
-  });
+  await assert.rejects(
+    () =>
+      createUserKmsKey({
+        kms: explicitPolicyKms,
+        userId: "user-789",
+        keyPolicy: explicitPolicy
+      }),
+    /Custom keyPolicy overrides are not allowed/
+  );
 
-  const unsafeKmsCalls: unknown[] = [];
-  const unsafeKms = fakeKms(async command => {
-    unsafeKmsCalls.push(command);
-    if (command instanceof CreateKeyCommand) {
-      return {
-        KeyMetadata: {
-          KeyId: "kms-key-999",
-          Arn: "arn:aws:kms:us-east-1:123456789012:key/kms-key-999"
-        }
-      };
-    }
-    if (command instanceof CreateAliasCommand || command instanceof EnableKeyRotationCommand) {
-      return {};
-    }
-    throw new Error("Unexpected command");
-  });
-  await createUserKmsKey({
-    kms: unsafeKms,
-    userId: "user-999",
-    allowUnsafeDefaultKeyPolicy: true
-  });
-  const unsafeCreateKey = unsafeKmsCalls[0] as CreateKeyCommand;
-  assert.equal(unsafeCreateKey.input.Policy, undefined);
+  await assert.rejects(
+    () =>
+      createUserKmsKey({
+        kms: explicitPolicyKms,
+        userId: "user-999",
+        allowUnsafeDefaultKeyPolicy: true
+      }),
+    /allowUnsafeDefaultKeyPolicy is not supported/
+  );
 
   const calls: unknown[] = [];
   const customTagsKms = fakeKms(async command => {
@@ -512,9 +504,14 @@ test("validateKmsSecp256k1SigningKey enforces key shape and state", async () => 
 
 test("buildLeastPrivilegeKeyPolicy validates bindings", () => {
   const policy = buildLeastPrivilegeKeyPolicy(policyBindings);
-  const statements = (policy.Statement as Array<{ Sid: string }>) ?? [];
-  assert.equal(statements.length, 3);
+  const statements = (policy.Statement as Array<{ Sid: string; Action?: string[] }>) ?? [];
+  assert.equal(statements.length, 4);
   assert.equal(statements.some(statement => statement.Sid === "AllowRuntimeSigningOnly"), true);
+  assert.equal(statements.some(statement => statement.Sid === "AllowRuntimeMetadataReadOnly"), true);
+  const runtimeStatement = statements.find(statement => statement.Sid === "AllowRuntimeSigningOnly");
+  assert.deepEqual(runtimeStatement?.Action, ["kms:Sign"]);
+  const runtimeMetadataStatement = statements.find(statement => statement.Sid === "AllowRuntimeMetadataReadOnly");
+  assert.deepEqual(runtimeMetadataStatement?.Action, ["kms:GetPublicKey", "kms:DescribeKey", "kms:ListResourceTags"]);
 
   assert.throws(
     () =>
@@ -543,8 +540,60 @@ test("kmsAccessPolicyGuidance returns scoped policy templates", () => {
   const defaultPolicy = kmsAccessPolicyGuidance();
 
   assert.equal(policy.runtimeSignerPolicy.Statement[0].Resource, "arn:aws:kms:us-east-1:111122223333:key/abc");
-  assert.deepEqual(policy.runtimeSignerPolicy.Statement[0].Action, ["kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"]);
+  assert.deepEqual(policy.runtimeSignerPolicy.Statement[0].Action, ["kms:Sign"]);
+  assert.equal(policy.runtimeSignerPolicy.Statement[1].Resource, "arn:aws:kms:us-east-1:111122223333:key/abc");
+  assert.deepEqual(policy.runtimeSignerPolicy.Statement[1].Action, ["kms:GetPublicKey", "kms:DescribeKey", "kms:ListResourceTags"]);
   assert.equal(policy.keyAdminPolicy.Statement[1].Resource, "arn:aws:kms:us-east-1:111122223333:alias/workit/user/*");
   assert.equal(policy.keyAdminPolicy.Statement[2].Resource, "arn:aws:kms:us-east-1:111122223333:key/abc");
   assert.equal(defaultPolicy.runtimeSignerPolicy.Statement[0].Resource, "arn:aws:kms:REGION:ACCOUNT_ID:key/KEY_ID");
+});
+
+test("assertKmsKeyOwnershipForUser validates userId and app tags", async () => {
+  const auditEvents: Array<{ operation: string; status: string; detail?: string }> = [];
+  const kms = fakeKms(async command => {
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "user-1" }
+        ]
+      };
+    }
+    throw new Error("Unexpected command");
+  });
+
+  await assertKmsKeyOwnershipForUser({
+    kms,
+    keyId: "kms-key-1",
+    userId: "user-1",
+    auditLogger: event => auditEvents.push({ operation: event.operation, status: event.status, detail: event.detail })
+  });
+  assert.equal(auditEvents.some(event => event.operation === "ListResourceTags" && event.status === "success"), true);
+
+  const wrongUserKms = fakeKms(async command => {
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "other-user" }
+        ]
+      };
+    }
+    throw new Error("Unexpected command");
+  });
+  await assert.rejects(
+    () => assertKmsKeyOwnershipForUser({ kms: wrongUserKms, keyId: "kms-key-1", userId: "user-1" }),
+    /expected "user-1"/
+  );
+
+  const missingAppKms = fakeKms(async command => {
+    if (command instanceof ListResourceTagsCommand) {
+      return { Tags: [{ TagKey: "userId", TagValue: "user-1" }] };
+    }
+    throw new Error("Unexpected command");
+  });
+  await assert.rejects(
+    () => assertKmsKeyOwnershipForUser({ kms: missingAppKms, keyId: "kms-key-1", userId: "user-1" }),
+    /missing required app tag/
+  );
 });

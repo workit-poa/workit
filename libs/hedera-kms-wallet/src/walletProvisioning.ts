@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { KMSClient } from "@aws-sdk/client-kms";
 import { AccountCreateTransaction, AccountId, AccountUpdateTransaction, Hbar } from "@hashgraph/sdk";
-import { createUserKmsKey, type KmsAuditLogger, type KmsKeyPolicyBindings } from "./kmsKeyManager";
+import {
+  assertKmsKeyOwnershipForUser,
+  createUserKmsKey,
+  type KmsAuditEvent,
+  type KmsAuditLogger,
+  type KmsKeyPolicyBindings
+} from "./kmsKeyManager";
 import {
   addKmsSignatureToFrozenTransaction,
   createHederaClient,
@@ -80,6 +86,20 @@ function fingerprintFromPublicKey(publicKeyCompressed: Uint8Array): string {
   return createHash("sha256").update(publicKeyCompressed).digest("hex");
 }
 
+function emitWalletAuditEvent(
+  auditLogger: KmsAuditLogger | undefined,
+  event: Omit<KmsAuditEvent, "timestamp">
+): void {
+  if (!auditLogger) {
+    return;
+  }
+
+  auditLogger({
+    ...event,
+    timestamp: new Date().toISOString()
+  });
+}
+
 export async function provisionHederaAccountForUser(
   params: ProvisionHederaAccountForUserParams
 ): Promise<ProvisionedHederaWallet> {
@@ -119,9 +139,20 @@ export async function provisionHederaAccountForUser(
         "Provision keys in an admin workflow and pass existingKeyId for runtime flows."
     );
   }
+  if (!normalizedExistingKeyId && !policyBindings) {
+    throw new Error("policyBindings is required when creating a new key.");
+  }
+  if (keyPolicy) {
+    throw new Error("keyPolicy is no longer supported. Use policyBindings.");
+  }
+  if (allowUnsafeDefaultKeyPolicy) {
+    throw new Error("allowUnsafeDefaultKeyPolicy is no longer supported. Use policyBindings.");
+  }
 
   const kms = new KMSClient({ region: awsRegion });
   let hederaClient: ReturnType<typeof createHederaClient> | undefined;
+  let selectedKeyId: string | undefined;
+  let selectedKeyArn: string | undefined;
 
   try {
     const createdKey = normalizedExistingKeyId
@@ -137,11 +168,18 @@ export async function provisionHederaAccountForUser(
           userId: normalizedUserId,
           descriptionPrefix: keyDescriptionPrefix,
           aliasPrefix,
-          keyPolicy,
           policyBindings,
-          allowUnsafeDefaultKeyPolicy,
           auditLogger
         });
+    selectedKeyId = createdKey.keyId;
+    selectedKeyArn = createdKey.keyArn;
+
+    await assertKmsKeyOwnershipForUser({
+      kms,
+      keyId: createdKey.keyId,
+      userId: normalizedUserId,
+      auditLogger
+    });
 
     const signer = await createKmsHederaSigner({
       kms,
@@ -168,7 +206,7 @@ export async function provisionHederaAccountForUser(
       throw new Error("Hedera account creation did not return an account id");
     }
 
-    return {
+    const result = {
       accountId,
       keyId: createdKey.keyId,
       keyArn: createdKey.keyArn ?? signer.keyArn,
@@ -179,6 +217,27 @@ export async function provisionHederaAccountForUser(
       rotationEnabled: createdKey.rotationEnabled,
       rotationNote: createdKey.rotationNote
     };
+    emitWalletAuditEvent(auditLogger, {
+      operation: "ProvisionAccount",
+      status: "success",
+      userId: normalizedUserId,
+      accountId,
+      keyId: result.keyId,
+      keyArn: result.keyArn,
+      network: hederaNetwork
+    });
+    return result;
+  } catch (error) {
+    emitWalletAuditEvent(auditLogger, {
+      operation: "ProvisionAccount",
+      status: "failure",
+      userId: normalizedUserId,
+      keyId: selectedKeyId,
+      keyArn: selectedKeyArn,
+      network: hederaNetwork,
+      detail: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
   } finally {
     kms.destroy();
     hederaClient?.close();
@@ -224,8 +283,20 @@ export async function rotateHederaAccountKmsKey(
   }
 
   const normalizedReplacementKeyId = replacementKeyId?.trim();
+  if (!normalizedReplacementKeyId && !policyBindings) {
+    throw new Error("policyBindings is required when creating a replacement key.");
+  }
+  if (keyPolicy) {
+    throw new Error("keyPolicy is no longer supported. Use policyBindings.");
+  }
+  if (allowUnsafeDefaultKeyPolicy) {
+    throw new Error("allowUnsafeDefaultKeyPolicy is no longer supported. Use policyBindings.");
+  }
+
   const kms = new KMSClient({ region: awsRegion });
   let hederaClient: ReturnType<typeof createHederaClient> | undefined;
+  let nextKeyId: string | undefined;
+  let nextKeyArn: string | undefined;
 
   try {
     const replacementKey = normalizedReplacementKeyId
@@ -241,11 +312,24 @@ export async function rotateHederaAccountKmsKey(
           userId: normalizedUserId,
           descriptionPrefix: keyDescriptionPrefix,
           aliasPrefix,
-          keyPolicy,
           policyBindings,
-          allowUnsafeDefaultKeyPolicy,
           auditLogger
         });
+    nextKeyId = replacementKey.keyId;
+    nextKeyArn = replacementKey.keyArn;
+
+    await assertKmsKeyOwnershipForUser({
+      kms,
+      keyId: normalizedCurrentKeyId,
+      userId: normalizedUserId,
+      auditLogger
+    });
+    await assertKmsKeyOwnershipForUser({
+      kms,
+      keyId: replacementKey.keyId,
+      userId: normalizedUserId,
+      auditLogger
+    });
 
     const currentSigner = await createKmsHederaSigner({
       kms,
@@ -276,7 +360,7 @@ export async function rotateHederaAccountKmsKey(
     const { response, receipt } = await executeSignedTransaction(hederaClient, accountUpdateTx);
     const transactionId = response.transactionId.toString();
 
-    return {
+    const result = {
       accountId: normalizedAccountId,
       previousKeyId: currentSigner.keyId,
       previousKeyArn: currentSigner.keyArn,
@@ -294,6 +378,29 @@ export async function rotateHederaAccountKmsKey(
       receiptStatus: receipt.status.toString(),
       mirrorLink: mirrorLinkForTransaction(hederaNetwork, transactionId)
     };
+    emitWalletAuditEvent(auditLogger, {
+      operation: "RotateAccountKey",
+      status: "success",
+      userId: normalizedUserId,
+      accountId: normalizedAccountId,
+      keyId: result.keyId,
+      keyArn: result.keyArn,
+      transactionId: result.transactionId,
+      network: hederaNetwork
+    });
+    return result;
+  } catch (error) {
+    emitWalletAuditEvent(auditLogger, {
+      operation: "RotateAccountKey",
+      status: "failure",
+      userId: normalizedUserId,
+      accountId: normalizedAccountId,
+      keyId: nextKeyId ?? normalizedCurrentKeyId,
+      keyArn: nextKeyArn,
+      network: hederaNetwork,
+      detail: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
   } finally {
     kms.destroy();
     hederaClient?.close();

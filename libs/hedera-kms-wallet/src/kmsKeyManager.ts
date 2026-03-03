@@ -5,6 +5,7 @@ import {
   EnableKeyRotationCommand,
   GetPublicKeyCommand,
   KMSClient,
+  ListResourceTagsCommand,
   type CreateKeyCommandInput,
   type KeyMetadata
 } from "@aws-sdk/client-kms";
@@ -18,7 +19,10 @@ export type KmsAuditOperation =
   | "EnableKeyRotation"
   | "DescribeKey"
   | "GetPublicKey"
-  | "Sign";
+  | "ListResourceTags"
+  | "Sign"
+  | "ProvisionAccount"
+  | "RotateAccountKey";
 export type KmsAuditStatus = "success" | "failure" | "skipped";
 
 export interface KmsAuditEvent {
@@ -28,6 +32,10 @@ export interface KmsAuditEvent {
   keyId?: string;
   keyArn?: string;
   aliasName?: string;
+  userId?: string;
+  accountId?: string;
+  transactionId?: string;
+  network?: string;
   detail?: string;
 }
 
@@ -169,21 +177,22 @@ function isUnsupportedAsymmetricRotationError(error: unknown): boolean {
 
 function resolveCreateKeyPolicy(params: CreateUserKmsKeyParams): Record<string, unknown> | undefined {
   if (params.keyPolicy) {
-    return params.keyPolicy;
-  }
-
-  if (params.policyBindings) {
-    return buildLeastPrivilegeKeyPolicy(params.policyBindings);
+    throw new Error(
+      "Custom keyPolicy overrides are not allowed. Use policyBindings to enforce least-privilege key policy controls."
+    );
   }
 
   if (params.allowUnsafeDefaultKeyPolicy) {
-    return undefined;
+    throw new Error(
+      "allowUnsafeDefaultKeyPolicy is not supported. Explicit policyBindings are required for key creation."
+    );
   }
 
-  throw new Error(
-    "Missing key policy controls. Provide keyPolicy or policyBindings. " +
-      "Use allowUnsafeDefaultKeyPolicy=true only for local demos."
-  );
+  if (!params.policyBindings) {
+    throw new Error("Missing key policy controls. Provide policyBindings for key creation.");
+  }
+
+  return buildLeastPrivilegeKeyPolicy(params.policyBindings);
 }
 
 async function tryEnableRotation(
@@ -261,6 +270,11 @@ export async function createUserKmsKey(params: CreateUserKmsKeyParams): Promise<
 
   const metadata = createResp.KeyMetadata as KeyMetadata | undefined;
   if (!metadata?.KeyId || !metadata.Arn) {
+    emitAuditEvent(auditLogger, {
+      operation: "CreateKey",
+      status: "failure",
+      detail: "AWS KMS did not return key metadata"
+    });
     throw new Error("AWS KMS did not return key metadata");
   }
   emitAuditEvent(auditLogger, {
@@ -333,6 +347,7 @@ export function buildLeastPrivilegeKeyPolicy(bindings: KmsKeyPolicyBindings): Re
         },
         Action: [
           "kms:DescribeKey",
+          "kms:ListResourceTags",
           "kms:GetKeyPolicy",
           "kms:PutKeyPolicy",
           "kms:CreateAlias",
@@ -353,13 +368,22 @@ export function buildLeastPrivilegeKeyPolicy(bindings: KmsKeyPolicyBindings): Re
         Principal: {
           AWS: runtimeSignerPrincipalArn
         },
-        Action: ["kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"],
+        Action: ["kms:Sign"],
         Resource: "*",
         Condition: {
           StringEquals: {
             "kms:SigningAlgorithm": "ECDSA_SHA_256"
           }
         }
+      },
+      {
+        Sid: "AllowRuntimeMetadataReadOnly",
+        Effect: "Allow",
+        Principal: {
+          AWS: runtimeSignerPrincipalArn
+        },
+        Action: ["kms:GetPublicKey", "kms:DescribeKey", "kms:ListResourceTags"],
+        Resource: "*"
       }
     ]
   };
@@ -387,17 +411,44 @@ export async function validateKmsSecp256k1SigningKey(
 
   const metadata = response.KeyMetadata as KeyMetadata | undefined;
   if (!metadata?.KeyId || !metadata.Arn) {
+    emitAuditEvent(auditLogger, {
+      operation: "DescribeKey",
+      status: "failure",
+      keyId: normalizedKeyId,
+      detail: "KMS did not return key metadata"
+    });
     throw new Error("KMS did not return key metadata");
   }
 
   const isKeyEnabled = metadata.Enabled === undefined ? metadata.KeyState === "Enabled" : metadata.Enabled;
   if (!isKeyEnabled || metadata.KeyState !== "Enabled") {
+    emitAuditEvent(auditLogger, {
+      operation: "DescribeKey",
+      status: "failure",
+      keyId: metadata.KeyId,
+      keyArn: metadata.Arn,
+      detail: `KMS key "${metadata.KeyId}" must be in Enabled state for signing.`
+    });
     throw new Error(`KMS key "${metadata.KeyId}" must be in Enabled state for signing.`);
   }
   if (metadata.KeySpec !== "ECC_SECG_P256K1") {
+    emitAuditEvent(auditLogger, {
+      operation: "DescribeKey",
+      status: "failure",
+      keyId: metadata.KeyId,
+      keyArn: metadata.Arn,
+      detail: `KMS key "${metadata.KeyId}" must use KeySpec ECC_SECG_P256K1.`
+    });
     throw new Error(`KMS key "${metadata.KeyId}" must use KeySpec ECC_SECG_P256K1.`);
   }
   if (metadata.KeyUsage !== "SIGN_VERIFY") {
+    emitAuditEvent(auditLogger, {
+      operation: "DescribeKey",
+      status: "failure",
+      keyId: metadata.KeyId,
+      keyArn: metadata.Arn,
+      detail: `KMS key "${metadata.KeyId}" must use KeyUsage SIGN_VERIFY.`
+    });
     throw new Error(`KMS key "${metadata.KeyId}" must use KeyUsage SIGN_VERIFY.`);
   }
 
@@ -431,6 +482,12 @@ export async function getPublicKeyBytes(kms: KMSClient, keyId: string, auditLogg
   });
 
   if (!response.PublicKey) {
+    emitAuditEvent(auditLogger, {
+      operation: "GetPublicKey",
+      status: "failure",
+      keyId: normalizedKeyId,
+      detail: "KMS did not return public key bytes"
+    });
     throw new Error("KMS did not return public key bytes");
   }
 
@@ -443,6 +500,80 @@ export async function getPublicKeyBytes(kms: KMSClient, keyId: string, auditLogg
   return Buffer.from(response.PublicKey);
 }
 
+export async function assertKmsKeyOwnershipForUser(params: {
+  kms: KMSClient;
+  keyId: string;
+  userId: string;
+  expectedAppTag?: string;
+  auditLogger?: KmsAuditLogger;
+}): Promise<void> {
+  const { kms, keyId, userId, expectedAppTag = "workit", auditLogger } = params;
+  const normalizedKeyId = keyId.trim();
+  if (!normalizedKeyId) {
+    throw new Error("keyId is required");
+  }
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    throw new Error("userId is required");
+  }
+
+  const response = await kms.send(new ListResourceTagsCommand({ KeyId: normalizedKeyId })).catch(error => {
+    emitAuditEvent(auditLogger, {
+      operation: "ListResourceTags",
+      status: "failure",
+      keyId: normalizedKeyId,
+      userId: normalizedUserId,
+      detail: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  });
+
+  const tags = new Map(
+    (response.Tags ?? [])
+      .filter(tag => Boolean(tag.TagKey))
+      .map(tag => [String(tag.TagKey), tag.TagValue === undefined ? "" : String(tag.TagValue)])
+  );
+  const keyUserId = tags.get("userId");
+  if (keyUserId !== normalizedUserId) {
+    const detail =
+      keyUserId === undefined
+        ? `KMS key "${normalizedKeyId}" is missing required userId tag for "${normalizedUserId}".`
+        : `KMS key "${normalizedKeyId}" is tagged for userId "${keyUserId}", expected "${normalizedUserId}".`;
+    emitAuditEvent(auditLogger, {
+      operation: "ListResourceTags",
+      status: "failure",
+      keyId: normalizedKeyId,
+      userId: normalizedUserId,
+      detail
+    });
+    throw new Error(detail);
+  }
+
+  const appTag = tags.get("app");
+  if (appTag !== expectedAppTag) {
+    const detail =
+      appTag === undefined
+        ? `KMS key "${normalizedKeyId}" is missing required app tag "${expectedAppTag}".`
+        : `KMS key "${normalizedKeyId}" has app tag "${appTag}", expected "${expectedAppTag}".`;
+    emitAuditEvent(auditLogger, {
+      operation: "ListResourceTags",
+      status: "failure",
+      keyId: normalizedKeyId,
+      userId: normalizedUserId,
+      detail
+    });
+    throw new Error(detail);
+  }
+
+  emitAuditEvent(auditLogger, {
+    operation: "ListResourceTags",
+    status: "success",
+    keyId: normalizedKeyId,
+    userId: normalizedUserId,
+    detail: `Verified key ownership for userId "${normalizedUserId}".`
+  });
+}
+
 export function kmsAccessPolicyGuidance(
   keyArn = "arn:aws:kms:REGION:ACCOUNT_ID:key/KEY_ID",
   aliasArn = "arn:aws:kms:REGION:ACCOUNT_ID:alias/workit/user/*"
@@ -452,15 +583,21 @@ export function kmsAccessPolicyGuidance(
       Version: "2012-10-17",
       Statement: [
         {
-          Sid: "AllowSignAndReadPublicMetadata",
+          Sid: "AllowSign",
           Effect: "Allow",
-          Action: ["kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"],
+          Action: ["kms:Sign"],
           Resource: keyArn,
           Condition: {
             StringEquals: {
               "kms:SigningAlgorithm": "ECDSA_SHA_256"
             }
           }
+        },
+        {
+          Sid: "AllowReadPublicMetadata",
+          Effect: "Allow",
+          Action: ["kms:GetPublicKey", "kms:DescribeKey", "kms:ListResourceTags"],
+          Resource: keyArn
         }
       ]
     },
@@ -496,6 +633,7 @@ export function kmsAccessPolicyGuidance(
             "kms:TagResource",
             "kms:UntagResource",
             "kms:DescribeKey",
+            "kms:ListResourceTags",
             "kms:GetKeyPolicy",
             "kms:PutKeyPolicy",
             "kms:EnableKey",
