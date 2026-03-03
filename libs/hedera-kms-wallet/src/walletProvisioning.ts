@@ -19,6 +19,7 @@ import { createKmsHederaSigner } from "./kmsSigner";
 
 export interface ProvisionHederaAccountForUserParams {
   userId: string;
+  aliasUserId?: string;
   awsRegion?: string;
   hederaNetwork?: HederaNetwork;
   operatorId?: string;
@@ -48,6 +49,7 @@ export interface ProvisionedHederaWallet {
 
 export interface RotateHederaAccountKmsKeyParams {
   userId: string;
+  aliasUserId?: string;
   accountId: string;
   currentKeyId: string;
   replacementKeyId?: string;
@@ -105,6 +107,7 @@ export async function provisionHederaAccountForUser(
 ): Promise<ProvisionedHederaWallet> {
   const {
     userId,
+    aliasUserId,
     awsRegion = process.env.AWS_REGION,
     hederaNetwork = (process.env.HEDERA_NETWORK as HederaNetwork | undefined) ?? "testnet",
     operatorId = process.env.OPERATOR_ID || process.env.HEDERA_OPERATOR_ID,
@@ -122,6 +125,10 @@ export async function provisionHederaAccountForUser(
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {
     throw new Error("userId is required");
+  }
+  const normalizedAliasUserId = aliasUserId?.trim();
+  if (aliasUserId !== undefined && !normalizedAliasUserId) {
+    throw new Error("aliasUserId must not be empty when provided");
   }
 
   if (!awsRegion) throw new Error("Missing AWS_REGION");
@@ -166,6 +173,7 @@ export async function provisionHederaAccountForUser(
       : await createUserKmsKey({
           kms,
           userId: normalizedUserId,
+          aliasUserId: normalizedAliasUserId,
           descriptionPrefix: keyDescriptionPrefix,
           aliasPrefix,
           policyBindings,
@@ -249,6 +257,7 @@ export async function rotateHederaAccountKmsKey(
 ): Promise<RotatedHederaWalletKey> {
   const {
     userId,
+    aliasUserId,
     accountId,
     currentKeyId,
     replacementKeyId,
@@ -267,6 +276,10 @@ export async function rotateHederaAccountKmsKey(
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {
     throw new Error("userId is required");
+  }
+  const normalizedAliasUserId = aliasUserId?.trim();
+  if (aliasUserId !== undefined && !normalizedAliasUserId) {
+    throw new Error("aliasUserId must not be empty when provided");
   }
   const normalizedAccountId = accountId.trim();
   if (!normalizedAccountId) {
@@ -310,6 +323,7 @@ export async function rotateHederaAccountKmsKey(
       : await createUserKmsKey({
           kms,
           userId: normalizedUserId,
+          aliasUserId: normalizedAliasUserId,
           descriptionPrefix: keyDescriptionPrefix,
           aliasPrefix,
           policyBindings,

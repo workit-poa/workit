@@ -28,7 +28,7 @@ function resolveKmsPolicyBindingsFromEnv(): KmsKeyPolicyBindings | undefined {
   };
 }
 
-export async function provisionManagedWalletForUser(userId: string): Promise<ProvisionedWallet> {
+export async function provisionManagedWalletForUser(userId: string, aliasUserId?: string): Promise<ProvisionedWallet> {
   const policyBindings = resolveKmsPolicyBindingsFromEnv();
 
   if (!policyBindings) {
@@ -40,6 +40,7 @@ export async function provisionManagedWalletForUser(userId: string): Promise<Pro
 
   const provisioned = await provisionHederaAccountForUser({
     userId,
+    aliasUserId,
     awsRegion: process.env.AWS_REGION,
     hederaNetwork: (process.env.HEDERA_NETWORK as "testnet" | "mainnet" | undefined) ?? "testnet",
     operatorId: process.env.OPERATOR_ID || process.env.HEDERA_OPERATOR_ID,

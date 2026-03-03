@@ -50,6 +50,7 @@ export interface KmsKeyPolicyBindings {
 export interface CreateUserKmsKeyParams {
   kms: KMSClient;
   userId: string;
+  aliasUserId?: string;
   descriptionPrefix?: string;
   aliasPrefix?: string;
   tags?: NonNullable<CreateKeyCommandInput["Tags"]>;
@@ -238,6 +239,7 @@ export async function createUserKmsKey(params: CreateUserKmsKeyParams): Promise<
   const {
     kms,
     userId,
+    aliasUserId,
     descriptionPrefix = "Workit Hedera key for user",
     aliasPrefix = "alias/workit/user",
     tags,
@@ -246,6 +248,10 @@ export async function createUserKmsKey(params: CreateUserKmsKeyParams): Promise<
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {
     throw new Error("userId is required");
+  }
+  const normalizedAliasUserId = aliasUserId?.trim();
+  if (aliasUserId !== undefined && !normalizedAliasUserId) {
+    throw new Error("aliasUserId must not be empty when provided");
   }
 
   const keyPolicy = resolveCreateKeyPolicy(params);
@@ -284,7 +290,7 @@ export async function createUserKmsKey(params: CreateUserKmsKeyParams): Promise<
     keyArn: metadata.Arn
   });
 
-  const aliasName = normalizeAliasName(normalizedUserId, aliasPrefix);
+  const aliasName = normalizeAliasName(normalizedAliasUserId ?? normalizedUserId, aliasPrefix);
   try {
     await kms.send(
       new CreateAliasCommand({

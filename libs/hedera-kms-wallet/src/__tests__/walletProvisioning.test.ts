@@ -235,6 +235,83 @@ test("provisionHederaAccountForUser supports existing key id path", async () => 
   assert.equal(setInitialBalanceSpy.mock.calls.length, 0);
 });
 
+test("provisionHederaAccountForUser supports aliasUserId while preserving user ownership tags", async () => {
+  const fixture = buildKmsFixture();
+
+  vi.spyOn(KMSClient.prototype, "send").mockImplementation(async (command: unknown) => {
+    if (command instanceof CreateKeyCommand) {
+      return {
+        KeyMetadata: {
+          KeyId: "kms-key-alias",
+          Arn: "arn:aws:kms:us-east-1:123456789012:key/kms-key-alias"
+        }
+      } as never;
+    }
+    if (command instanceof CreateAliasCommand) {
+      return {} as never;
+    }
+    if (command instanceof EnableKeyRotationCommand) {
+      return {} as never;
+    }
+    if (command instanceof ListResourceTagsCommand) {
+      return {
+        Tags: [
+          { TagKey: "app", TagValue: "workit" },
+          { TagKey: "userId", TagValue: "internal-user-1" }
+        ]
+      } as never;
+    }
+    if (command instanceof DescribeKeyCommand) {
+      return {
+        KeyMetadata: {
+          KeyId: "kms-key-alias",
+          Arn: "arn:aws:kms:us-east-1:123456789012:key/kms-key-alias",
+          Enabled: true,
+          KeyState: "Enabled",
+          KeySpec: "ECC_SECG_P256K1",
+          KeyUsage: "SIGN_VERIFY"
+        }
+      } as never;
+    }
+    if (command instanceof GetPublicKeyCommand) {
+      return { PublicKey: fixture.spkiBytes } as never;
+    }
+    if (command instanceof SignCommand) {
+      return { Signature: fixture.derSignature } as never;
+    }
+
+    throw new Error("Unexpected command");
+  });
+  vi.spyOn(AccountCreateTransaction.prototype, "execute").mockImplementation(
+    async () =>
+      ({
+        getReceipt: async () => ({
+          accountId: { toString: () => "0.0.9009" }
+        })
+      }) as never
+  );
+
+  const result = await provisionHederaAccountForUser({
+    userId: "internal-user-1",
+    aliasUserId: "demo-user",
+    awsRegion: "us-east-1",
+    hederaNetwork: "testnet",
+    operatorId: "0.0.2",
+    operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+    initialHbar: 1,
+    allowKeyCreation: true,
+    policyBindings: {
+      accountId: "123456789012",
+      keyAdminPrincipalArn: "arn:aws:iam::123456789012:role/WorkitKmsKeyAdmin",
+      runtimeSignerPrincipalArn: "arn:aws:iam::123456789012:role/WorkitRuntimeSigner"
+    }
+  });
+
+  assert.equal(result.accountId, "0.0.9009");
+  assert.equal(result.keyId, "kms-key-alias");
+  assert.equal(result.aliasName, "alias/workit-user/demo-user");
+});
+
 test("provisionHederaAccountForUser reads config defaults from environment", async () => {
   const fixture = buildKmsFixture();
   const setInitialBalanceSpy = vi.spyOn(AccountCreateTransaction.prototype, "setInitialBalance");
@@ -404,6 +481,19 @@ test("provisionHederaAccountForUser validates required inputs", async () => {
         allowUnsafeDefaultKeyPolicy: true
       }),
     /allowUnsafeDefaultKeyPolicy is no longer supported/
+  );
+
+  await assert.rejects(
+    () =>
+      provisionHederaAccountForUser({
+        userId: "user-1",
+        aliasUserId: "   ",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw(),
+        existingKeyId: "key-id"
+      }),
+    /aliasUserId must not be empty when provided/
   );
 });
 
@@ -705,6 +795,21 @@ test("rotateHederaAccountKmsKey validates required inputs", async () => {
         allowUnsafeDefaultKeyPolicy: true
       }),
     /allowUnsafeDefaultKeyPolicy is no longer supported/
+  );
+
+  await assert.rejects(
+    () =>
+      rotateHederaAccountKmsKey({
+        userId: "user-1",
+        aliasUserId: "   ",
+        accountId: "0.0.1",
+        currentKeyId: "kms-key-current",
+        replacementKeyId: "kms-key-replacement",
+        awsRegion: "us-east-1",
+        operatorId: "0.0.2",
+        operatorKey: PrivateKey.generateECDSA().toStringRaw()
+      }),
+    /aliasUserId must not be empty when provided/
   );
 });
 

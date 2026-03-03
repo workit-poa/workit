@@ -37,6 +37,15 @@ function toAuthUser(user: UserRow): AuthUser {
   };
 }
 
+function getLoginWelcomeBaseValue(email: string | null): string | undefined {
+  if (!email) {
+    return undefined;
+  }
+
+  const localPart = email.split("@")[0]?.trim();
+  return localPart ? localPart : undefined;
+}
+
 async function createUserWithManagedWallet(
   values: Pick<UserRow, "email" | "googleId" | "facebookId" | "twitterId" | "discordId">
 ) {
@@ -45,7 +54,8 @@ async function createUserWithManagedWallet(
   if (!createdUser) throw new Error("Failed to create account");
 
   try {
-    const provisioned = await provisionManagedWalletForUser(createdUser.id);
+    const aliasUserId = getLoginWelcomeBaseValue(createdUser.email);
+    const provisioned = await provisionManagedWalletForUser(createdUser.id, aliasUserId);
 
     const [updatedUser] = await db
       .update(users)
