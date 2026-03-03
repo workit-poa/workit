@@ -2,6 +2,27 @@
 
 All notable changes to `@workit-poa/hedera-kms-wallet` are documented in this file.
 
+## [0.2.0] - 2026-03-03
+
+### Added
+
+- Added optional `payerAccountId` support to Hedera transaction helpers so transactions can be signed by the KMS wallet while fees are paid by either:
+  - the managed wallet account, or
+  - a separate paymaster account (with required payer signature handling in integration flows).
+- Added explicit requirement-to-implementation mapping in README to cover key management, security controls, auditability, and Hedera integration evidence.
+
+### Changed
+
+- Updated the standalone demo to set `payerAccountId` to the managed wallet account by default, so demo transaction fees are charged to the KMS-backed wallet instead of the operator.
+- Expanded package documentation to include:
+  - production-ready setup and usage guidance,
+  - API parameter updates for payer selection,
+  - working prototype coverage including `apps/web` auth onboarding integration.
+
+### Docs
+
+- Aligned `docs/authentication.md` wallet provisioning environment variable requirements with the actual secure key creation flow (`AWS_ACCOUNT_ID`, `KMS_KEY_ADMIN_PRINCIPAL_ARN`, `KMS_RUNTIME_SIGNER_PRINCIPAL_ARN`).
+
 ## [0.1.0] - 2026-03-03
 
 Initial public npm release.
