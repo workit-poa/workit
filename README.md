@@ -1,11 +1,11 @@
-# Proof of Activity Monorepo
+# Workit POA Monorepo
 
 Nx + pnpm monorepo for a Hedera-focused hackathon stack with a unified fullstack Next.js app and shared TypeScript libraries.
 
 ## Structure
 
 - `apps/web`: Fullstack Next.js app (UI + API routes)
-- `examples/hedera-kms-wallet-demo`: Standalone demo CLI for `@workit/hedera-kms-wallet`
+- `examples/hedera-kms-wallet-demo`: Standalone demo CLI for `@workit-poa/hedera-kms-wallet`
 - `libs/common`: Shared DTOs and utilities
 - `libs/auth`: Authentication domain logic
 - `libs/hedera-kms-wallet`: AWS KMS-backed Hedera wallet provisioning/signing integration
@@ -39,7 +39,7 @@ pnpm dev
 
 - Run locally:
   - `pnpm install`
-  - `pnpm --filter @workit/web dev`
+  - `pnpm --filter @workit-poa/web dev`
   - Open `http://localhost:3000` for the landing page, `http://localhost:3000/auth` for auth entry, and `http://localhost:3000/app` for the protected shell.
 - Where to change copy:
   - Landing content sections: `apps/web/components/landing/landing-page.tsx`

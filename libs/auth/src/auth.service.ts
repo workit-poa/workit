@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { SessionPayload } from "@workit/common";
+import { SessionPayload } from "@workit-poa/common";
 import { getDb } from "./db";
 import { emailOtpChallenges, users, type UserRow } from "./schema";
 import { provisionManagedWalletForUser } from "./wallet-provisioning";

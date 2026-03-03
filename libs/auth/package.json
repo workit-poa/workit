@@ -1,5 +1,5 @@
 {
-  "name": "@workit/auth",
+  "name": "@workit-poa/auth",
   "version": "0.1.0",
   "private": true,
   "main": "src/index.ts",
@@ -13,8 +13,8 @@
   "dependencies": {
     "@aws-sdk/client-kms": "^3.900.0",
     "@hashgraph/sdk": "^2.62.0",
-    "@workit/common": "workspace:*",
-    "@workit/hedera-kms-wallet": "workspace:*",
+    "@workit-poa/common": "workspace:*",
+    "@workit-poa/hedera-kms-wallet": "workspace:*",
     "bn.js": "5.2.1",
     "drizzle-orm": "^0.44.6",
     "postgres": "^3.4.7",

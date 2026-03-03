@@ -1,6 +1,6 @@
-# @workit/hedera-kms-wallet-demo
+# @workit-poa/hedera-kms-wallet-demo
 
-Standalone demo package for `@workit/hedera-kms-wallet`.
+Standalone demo package for `@workit-poa/hedera-kms-wallet`.
 
 ## Run
 
@@ -9,5 +9,5 @@ Standalone demo package for `@workit/hedera-kms-wallet`.
 3. Run:
 
 ```bash
-pnpm --filter @workit/hedera-kms-wallet-demo demo:kms-hedera
+pnpm --filter @workit-poa/hedera-kms-wallet-demo demo:kms-hedera
 ```

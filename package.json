@@ -1,5 +1,5 @@
 {
-  "name": "proof-of-activity",
+  "name": "workit-poa",
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@9.12.0",
@@ -17,7 +17,7 @@
     "affected:test": "nx affected -t test",
     "format": "prettier --write .",
     "graph": "nx graph",
-    "demo:kms-hedera": "pnpm --filter @workit/hedera-kms-wallet-demo demo:kms-hedera",
+    "demo:kms-hedera": "pnpm --filter @workit-poa/hedera-kms-wallet-demo demo:kms-hedera",
     "drizzle:generate": "drizzle-kit generate",
     "drizzle:migrate": "drizzle-kit migrate",
     "db:generate:migrate": "pnpm run drizzle:generate && pnpm run drizzle:migrate"

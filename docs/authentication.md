@@ -23,7 +23,7 @@ Email OTP challenges are stored in `email_otp_challenges` with hashed codes, att
 
 ## Wallet Provisioning (AWS KMS + Hedera)
 
-- On new user creation (email signup or first-time OAuth), backend provisions a managed wallet via `@workit/hedera-kms-wallet`.
+- On new user creation (email signup or first-time OAuth), backend provisions a managed wallet via `@workit-poa/hedera-kms-wallet`.
 - A dedicated AWS KMS asymmetric key is created per user (`ECC_SECG_P256K1`, `SIGN_VERIFY`).
 - Hedera account is created with the derived ECDSA(secp256k1) public key.
 - Persisted on `users`: `hedera_account_id`, `kms_key_id` (ARN/KeyId), and `hedera_public_key_fingerprint`.

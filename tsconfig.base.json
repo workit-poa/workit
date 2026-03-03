@@ -13,13 +13,13 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@workit/common": [
+      "@workit-poa/common": [
         "libs/common/src/index.ts"
       ],
-      "@workit/auth": [
+      "@workit-poa/auth": [
         "libs/auth/src/index.ts"
       ],
-      "@workit/hedera-kms-wallet": [
+      "@workit-poa/hedera-kms-wallet": [
         "libs/hedera-kms-wallet/src/index.ts"
       ]
     }

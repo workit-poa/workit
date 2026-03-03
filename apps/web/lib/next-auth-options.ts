@@ -3,7 +3,7 @@ import type { OAuthConfig } from "next-auth/providers/oauth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import DiscordProvider from "next-auth/providers/discord";
-import { authenticateWithOAuth, verifyEmailOtpChallenge } from "@workit/auth";
+import { authenticateWithOAuth, verifyEmailOtpChallenge } from "@workit-poa/auth";
 
 type XOidcProfile = {
   sub: string;

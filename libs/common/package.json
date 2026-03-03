@@ -1,5 +1,5 @@
 {
-  "name": "@workit/common",
+  "name": "@workit-poa/common",
   "version": "0.1.0",
   "private": true,
   "main": "src/index.ts",

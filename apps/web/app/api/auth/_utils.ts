@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getClientIp } from "@workit/auth";
+import { getClientIp } from "@workit-poa/auth";
 
 export function getSessionContext(request: NextRequest) {
   return {

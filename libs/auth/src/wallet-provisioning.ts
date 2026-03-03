@@ -1,4 +1,4 @@
-import { provisionHederaAccountForUser, type KmsKeyPolicyBindings } from "@workit/hedera-kms-wallet";
+import { provisionHederaAccountForUser, type KmsKeyPolicyBindings } from "@workit-poa/hedera-kms-wallet";
 
 export interface ProvisionedWallet {
   hederaAccountId: string;

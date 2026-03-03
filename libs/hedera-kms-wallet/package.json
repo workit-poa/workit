@@ -1,5 +1,5 @@
 {
-  "name": "@workit/hedera-kms-wallet",
+  "name": "@workit-poa/hedera-kms-wallet",
   "version": "0.1.0",
   "description": "AWS KMS-backed Hedera wallet provisioning and signing utilities.",
   "license": "MIT",

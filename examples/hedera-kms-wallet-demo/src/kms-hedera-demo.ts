@@ -7,7 +7,7 @@ import {
   provisionHederaAccountForUser,
   submitTopicMessageWithKmsSignature,
   submitTinybarTransferWithKmsSignature
-} from "@workit/hedera-kms-wallet";
+} from "@workit-poa/hedera-kms-wallet";
 
 let activeCleanup: (() => Promise<void>) | undefined;
 let interrupted = false;

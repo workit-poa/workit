@@ -1,5 +1,5 @@
 {
-  "name": "@workit/web",
+  "name": "@workit-poa/web",
   "private": true,
   "version": "0.1.0",
   "scripts": {
@@ -10,9 +10,9 @@
     "test": "node --import tsx --test lib/*.test.ts"
   },
   "dependencies": {
-    "@workit/auth": "workspace:*",
-    "@workit/common": "workspace:*",
-    "@workit/hedera-kms-wallet": "workspace:*",
+    "@workit-poa/auth": "workspace:*",
+    "@workit-poa/common": "workspace:*",
+    "@workit-poa/hedera-kms-wallet": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "formik": "^2.4.6",

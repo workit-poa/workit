@@ -1,5 +1,5 @@
 {
-  "name": "@workit/hedera-kms-wallet-demo",
+  "name": "@workit-poa/hedera-kms-wallet-demo",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.900.0",
-    "@workit/hedera-kms-wallet": "workspace:*",
+    "@workit-poa/hedera-kms-wallet": "workspace:*",
     "dotenv": "^16.4.5"
   }
 }

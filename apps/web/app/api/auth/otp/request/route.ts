@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertWithinRateLimit, requestEmailOtpChallenge } from "@workit/auth";
+import { assertWithinRateLimit, requestEmailOtpChallenge } from "@workit-poa/auth";
 import { assertSameOrigin, authErrorResponse, getSessionContext } from "../../_utils";
 
 export async function POST(request: NextRequest) {

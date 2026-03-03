@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getWalletDetails } from "@workit/hedera-kms-wallet";
+import { getWalletDetails } from "@workit-poa/hedera-kms-wallet";
 
 interface WalletRouteParams {
   params: Promise<{

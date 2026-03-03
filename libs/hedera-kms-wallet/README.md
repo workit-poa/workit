@@ -1,4 +1,4 @@
-# @workit/hedera-kms-wallet
+# @workit-poa/hedera-kms-wallet
 
 Secure Hedera wallet abstraction backed by AWS KMS asymmetric keys (`ECC_SECG_P256K1`, `SIGN_VERIFY`).
 
@@ -131,7 +131,7 @@ pnpm demo:kms-hedera
 or directly:
 
 ```bash
-pnpm --filter @workit/hedera-kms-wallet-demo demo:kms-hedera
+pnpm --filter @workit-poa/hedera-kms-wallet-demo demo:kms-hedera
 ```
 
 Expected output includes:
@@ -147,13 +147,13 @@ Expected output includes:
 Run package tests (Vitest):
 
 ```bash
-pnpm --filter @workit/hedera-kms-wallet test
+pnpm --filter @workit-poa/hedera-kms-wallet test
 ```
 
 Run coverage report:
 
 ```bash
-pnpm --filter @workit/hedera-kms-wallet test:coverage
+pnpm --filter @workit-poa/hedera-kms-wallet test:coverage
 ```
 
 Environment file location for tests:
@@ -167,13 +167,13 @@ Package is configured for npm publishing:
 - entrypoints: `dist/index.js` + `dist/index.d.ts`
 - export map in `package.json`
 - published files restricted to `dist`, `README.md`, `.env.example`, and `LICENSE`
-- `pnpm --filter @workit/hedera-kms-wallet prepack` runs clean + lint + tests + build
+- `pnpm --filter @workit-poa/hedera-kms-wallet prepack` runs clean + lint + tests + build
 
 Pack and inspect:
 
 ```bash
-pnpm --filter @workit/hedera-kms-wallet prepack
-pnpm --filter @workit/hedera-kms-wallet pack
+pnpm --filter @workit-poa/hedera-kms-wallet prepack
+pnpm --filter @workit-poa/hedera-kms-wallet pack
 ```
 
 ## Integration With Workit Auth
@@ -205,7 +205,7 @@ This package provides `rotateHederaAccountKmsKey()` to execute the supported rot
 Minimal example:
 
 ```ts
-import { rotateHederaAccountKmsKey } from "@workit/hedera-kms-wallet";
+import { rotateHederaAccountKmsKey } from "@workit-poa/hedera-kms-wallet";
 
 const rotated = await rotateHederaAccountKmsKey({
   userId: "user-123",

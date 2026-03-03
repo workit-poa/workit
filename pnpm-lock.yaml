@@ -38,13 +38,13 @@ importers:
 
   apps/web:
     dependencies:
-      '@workit/auth':
+      '@workit-poa/auth':
         specifier: workspace:*
         version: link:../../libs/auth
-      '@workit/common':
+      '@workit-poa/common':
         specifier: workspace:*
         version: link:../../libs/common
-      '@workit/hedera-kms-wallet':
+      '@workit-poa/hedera-kms-wallet':
         specifier: workspace:*
         version: link:../../libs/hedera-kms-wallet
       class-variance-authority:
@@ -99,7 +99,7 @@ importers:
       '@aws-sdk/client-kms':
         specifier: ^3.900.0
         version: 3.1000.0
-      '@workit/hedera-kms-wallet':
+      '@workit-poa/hedera-kms-wallet':
         specifier: workspace:*
         version: link:../../libs/hedera-kms-wallet
       dotenv:
@@ -114,10 +114,10 @@ importers:
       '@hashgraph/sdk':
         specifier: ^2.62.0
         version: 2.80.0(bn.js@5.2.1)(react-native@0.84.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))
-      '@workit/common':
+      '@workit-poa/common':
         specifier: workspace:*
         version: link:../common
-      '@workit/hedera-kms-wallet':
+      '@workit-poa/hedera-kms-wallet':
         specifier: workspace:*
         version: link:../hedera-kms-wallet
       bn.js:
