@@ -1,0 +1,14 @@
+{
+  "name": "@workit/hedera-kms-wallet-demo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "demo:kms-hedera": "tsx src/kms-hedera-demo.ts",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aws-sdk/client-kms": "^3.900.0",
+    "@workit/hedera-kms-wallet": "workspace:*",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -94,6 +94,18 @@ importers:
         specifier: ^3.4.17
         version: 3.4.19(tsx@4.21.0)(yaml@2.8.2)
 
+  examples/hedera-kms-wallet-demo:
+    dependencies:
+      '@aws-sdk/client-kms':
+        specifier: ^3.900.0
+        version: 3.1000.0
+      '@workit/hedera-kms-wallet':
+        specifier: workspace:*
+        version: link:../../libs/hedera-kms-wallet
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.4.7
+
   libs/auth:
     dependencies:
       '@aws-sdk/client-kms':
@@ -134,13 +146,13 @@ importers:
       '@noble/hashes':
         specifier: ^1.7.1
         version: 1.7.1
-      dotenv:
-        specifier: ^16.4.5
-        version: 16.4.7
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^3.2.4
         version: 3.2.4(vitest@3.2.4(@types/node@22.19.13)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.4.7
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@22.19.13)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)

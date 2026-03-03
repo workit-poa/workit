@@ -84,7 +84,7 @@ Package-level audit hook:
   - `rotateHederaAccountKmsKey()` performs managed rotation by creating/reusing a replacement KMS key and submitting Hedera `AccountUpdateTransaction`.
   - Asymmetric KMS auto-rotation limitation is handled by key replacement workflow rather than automatic in-place rotation.
 - Submit a Hedera transaction:
-  - `src/demo/kms-hedera-demo.ts` submits a topic message or tinybar transfer on testnet.
+  - `examples/hedera-kms-wallet-demo/src/kms-hedera-demo.ts` submits a topic message or tinybar transfer on testnet.
 - Access controls + audit logging:
   - IAM policy templates via `kmsAccessPolicyGuidance()`.
   - Enforced create-time key policy requirements in `createUserKmsKey()`.
@@ -92,7 +92,7 @@ Package-level audit hook:
 - Signing without private-key exposure:
   - `createKmsHederaSigner()` calls `kms:Sign`; only public key and signatures leave KMS.
 - Working prototype + docs:
-  - This package + demo CLI + this README.
+  - This package + `examples/hedera-kms-wallet-demo` + this README.
 
 ## How to Run Demo
 
@@ -113,9 +113,9 @@ Required environment variables:
   - `HEDERA_NEW_ACCOUNT_INITIAL_HBAR=1` (required and must be `> 0` when provisioning a new demo account)
 
 Environment file location for demo:
-- Put env vars in `libs/hedera-kms-wallet/.env` (preferred for this package)
+- Put env vars in `examples/hedera-kms-wallet-demo/.env` (preferred for this demo package)
 - The demo also reads repo-root `../../.env` as fallback
-- Start from `libs/hedera-kms-wallet/.env.example`
+- Start from `examples/hedera-kms-wallet-demo/.env.example`
 
 Fail-fast behavior:
 - Demo validates `DEMO_MODE` and `DEMO_TRANSFER_TINYBAR` before running.
@@ -131,7 +131,7 @@ pnpm demo:kms-hedera
 or directly:
 
 ```bash
-pnpm --filter @workit/hedera-kms-wallet demo:kms-hedera
+pnpm --filter @workit/hedera-kms-wallet-demo demo:kms-hedera
 ```
 
 Expected output includes:

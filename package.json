@@ -5,6 +5,7 @@
   "packageManager": "pnpm@9.12.0",
   "workspaces": [
     "apps/*",
+    "examples/*",
     "libs/*"
   ],
   "scripts": {
@@ -16,7 +17,7 @@
     "affected:test": "nx affected -t test",
     "format": "prettier --write .",
     "graph": "nx graph",
-    "demo:kms-hedera": "pnpm --filter @workit/hedera-kms-wallet demo:kms-hedera",
+    "demo:kms-hedera": "pnpm --filter @workit/hedera-kms-wallet-demo demo:kms-hedera",
     "drizzle:generate": "drizzle-kit generate",
     "drizzle:migrate": "drizzle-kit migrate",
     "db:generate:migrate": "pnpm run drizzle:generate && pnpm run drizzle:migrate"

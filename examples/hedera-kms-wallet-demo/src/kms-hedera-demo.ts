@@ -1,13 +1,13 @@
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { KMSClient } from "@aws-sdk/client-kms";
-import { provisionHederaAccountForUser } from "../walletProvisioning";
 import {
   createHederaClientFromEnv,
+  createKmsHederaSigner,
+  provisionHederaAccountForUser,
   submitTopicMessageWithKmsSignature,
   submitTinybarTransferWithKmsSignature
-} from "../hederaClient";
-import { createKmsHederaSigner } from "../kmsSigner";
+} from "@workit/hedera-kms-wallet";
 
 let activeCleanup: (() => Promise<void>) | undefined;
 let interrupted = false;
