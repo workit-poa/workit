@@ -1,7 +1,19 @@
 {
   "name": "@workit/hedera-kms-wallet",
   "version": "0.1.0",
+  "description": "AWS KMS-backed Hedera wallet provisioning and signing utilities.",
+  "license": "MIT",
+
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/workit-poa/workit.git",
+    "directory": "libs/hedera-kms-wallet"
+  },
+  "homepage": "https://github.com/workit-poa/workit/tree/main/libs/hedera-kms-wallet#readme",
+  "bugs": { "url": "https://github.com/workit-poa/workit/issues" },
+
   "private": false,
+
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -10,14 +22,16 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    ".env.example"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
+
+  "files": ["dist", "README.md", ".env.example", "LICENSE"],
+
+  "publishConfig": { "access": "public" },
+
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
+
+  "keywords": ["hedera", "hashgraph", "aws-kms", "kms", "wallet", "signer"],
+
   "scripts": {
     "clean": "rm -rf dist",
     "build": "tsc -p tsconfig.build.json",

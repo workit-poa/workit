@@ -166,7 +166,7 @@ Environment file location for tests:
 Package is configured for npm publishing:
 - entrypoints: `dist/index.js` + `dist/index.d.ts`
 - export map in `package.json`
-- published files restricted to `dist`, `README.md`, and `.env.example`
+- published files restricted to `dist`, `README.md`, `.env.example`, and `LICENSE`
 - `pnpm --filter @workit/hedera-kms-wallet prepack` runs clean + lint + tests + build
 
 Pack and inspect:
