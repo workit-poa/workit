@@ -146,6 +146,12 @@ importers:
       '@nomicfoundation/hardhat-toolbox':
         specifier: ^5.0.0
         version: 5.0.0(be7pksanq2kd4cgzhw42dfks4y)
+      '@openzeppelin/contracts':
+        specifier: 5.2.0
+        version: 5.2.0
+      '@openzeppelin/contracts-upgradeable':
+        specifier: 5.2.0
+        version: 5.2.0(@openzeppelin/contracts@5.2.0)
       '@types/chai':
         specifier: ^4.3.20
         version: 4.3.20
@@ -164,6 +170,9 @@ importers:
       hardhat:
         specifier: ^2.22.18
         version: 2.28.6(ts-node@10.9.2(@types/node@22.19.13)(typescript@5.9.3))(typescript@5.9.3)
+      prb-math:
+        specifier: ^2.4.3
+        version: 2.4.3(@ethersproject/bignumber@5.8.0)(evm-bn@1.1.2(@ethersproject/bignumber@5.8.0))(mathjs@10.6.4)
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@22.19.13)(typescript@5.9.3)
@@ -2043,6 +2052,14 @@ packages:
   '@nx/workspace@21.6.10':
     resolution: {integrity: sha512-6OkXs4gAVjDtrfqhJf7lHZX/VlCFLRZpywfgvmije40wrExkJDNEHx3Gf6dvSVwl0vE6Gz8D2t6luO02hGGz4w==}
 
+  '@openzeppelin/contracts-upgradeable@5.2.0':
+    resolution: {integrity: sha512-mZIu9oa4tQTlGiOJHk6D3LdJlqFqF6oNOSn6S6UVJtzfs9UsY9/dhMEbAVTwElxUtJnjpf6yA062+oBp+eOyPg==}
+    peerDependencies:
+      '@openzeppelin/contracts': 5.2.0
+
+  '@openzeppelin/contracts@5.2.0':
+    resolution: {integrity: sha512-bxjNie5z89W1Ea0NZLZluFh8PrFNn9DH8DQlujEok2yjsOlraUPKID5p1Wk3qdNbf6XkQ1Os2RvfiHrrXLHWKA==}
+
   '@panva/hkdf@1.2.1':
     resolution: {integrity: sha512-6oclG6Y3PiDFcoyk8srjLfVKyMfVCKJ27JwNPViuXziFpmdz+MZnZN/aKY0JGXgYuO/VghU0jcOAZgWXZ1Dmrw==}
 
@@ -3249,6 +3266,9 @@ packages:
     resolution: {integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==}
     engines: {node: '>= 12'}
 
+  complex.js@2.4.3:
+    resolution: {integrity: sha512-UrQVSUur14tNX6tiP4y8T4w4FeJAX3bi2cIv0pu/DTLFNxoq7z2Yh83Vfzztj6Px3X/lubqQ9IrPp7Bpn6p4MQ==}
+
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
 
@@ -3343,6 +3363,9 @@ packages:
   decamelize@4.0.0:
     resolution: {integrity: sha512-9iE1PgSik9HeIIw2JO94IidnE3eBoQrFJ3w7sFuzSX4DpmZ3v5sZpUiV5Swcf6mQEF+Y0ru8Neo+p+nyh2J+hQ==}
     engines: {node: '>=10'}
+
+  decimal.js@10.6.0:
+    resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
   deep-eql@4.1.4:
     resolution: {integrity: sha512-SUwdGfqdKOwxCPeVYjwSyRpJ7Z+fhpwIAtmCUdZIWZ/YP5R9WAsyuSgpLVDi9bjWoN2LXHNss/dk3urXtdQxGg==}
@@ -3622,6 +3645,9 @@ packages:
   escape-html@1.0.3:
     resolution: {integrity: sha512-NiSupZ4OeuGwr68lGIeym/ksIZMJodUGOSCZ/FSnTxcrekbvqrgdUxlJOMpijaKZVjAJrWrGs/6Jy8OMuyj9ow==}
 
+  escape-latex@1.2.0:
+    resolution: {integrity: sha512-nV5aVWW1K0wEiUIEdZ4erkGGH8mDxGyxSeqPzRNtWP7ataw+/olFObw7hujFWlVjNsaDFw5VZ5NzVSIqRgfTiw==}
+
   escape-string-regexp@1.0.5:
     resolution: {integrity: sha512-vbRorB5FUQWvla16U8R/qgaFIya2qGzwDrNmCZuYKrbdSUMG6I1ZCGQRefkRVhuOkIGVne7BQ35DSfo1qvJqFg==}
     engines: {node: '>=0.8.0'}
@@ -3702,6 +3728,11 @@ packages:
   event-target-shim@5.0.1:
     resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
     engines: {node: '>=6'}
+
+  evm-bn@1.1.2:
+    resolution: {integrity: sha512-Lq8CT1EAjSeN+Yk0h1hpSwnZyMA4Xir6fQD4vlStljAuW2xr7qLOEGDLGsTa9sU2e40EYIumA4wYhMC/e+lyKw==}
+    peerDependencies:
+      '@ethersproject/bignumber': 5.x
 
   evp_bytestokey@1.0.3:
     resolution: {integrity: sha512-/f2Go4TognH/KvCISP7OUsHn85hT9nUkxxA9BEWxFn+Oj9o8ZNLm/40hdlgSLyuOimsrTKLUMEorQexp/aPQeA==}
@@ -3833,6 +3864,9 @@ packages:
   fp-ts@1.19.3:
     resolution: {integrity: sha512-H5KQDspykdHuztLTg+ajGN0Z2qUjcEf3Ybxc6hLt0k7/zPkn29XnKnxlBPyW2XIddWrGaJBzBl4VLYOtk39yZg==}
 
+  fraction.js@4.3.7:
+    resolution: {integrity: sha512-ZsDfxO51wGAXREY55a7la9LScWpwv9RxIrYABrlvOFBlH/ShPnrtsXeuUIfXKKOVicNxQ+o8JTbJvjS4M89yew==}
+
   fraction.js@5.3.4:
     resolution: {integrity: sha512-1X1NTtiJphryn/uLQz3whtY6jK3fTqoE3ohKs0tT+Ujr1W59oopxmoEh7Lu5p6vBaPbgoM0bzveAW4Qi5RyWDQ==}
 
@@ -3853,6 +3887,9 @@ packages:
   fresh@0.5.2:
     resolution: {integrity: sha512-zJ2mQYM18rEFOudeV4GShTGIQ7RbzA7ozbU9I/XBpm7kqgMywgmylMwXHxZJmkVoYkna9d2pVXVXPdYTP9ej8Q==}
     engines: {node: '>= 0.6'}
+
+  from-exponential@1.1.1:
+    resolution: {integrity: sha512-VBE7f5OVnYwdgB3LHa+Qo29h8qVpxhVO9Trlc+AWm+/XNAgks1tAwMFHb33mjeiof77GglsJzeYF7OqXrROP/A==}
 
   front-matter@4.0.2:
     resolution: {integrity: sha512-I8ZuJ/qG92NWX8i5x1Y8qyj3vizhXS31OxjKDu3LKP+7/qBgfIKValiZIEwoVoJKUHlhWtYrktkxV1XsX+pPlg==}
@@ -4250,6 +4287,9 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  javascript-natural-sort@0.7.1:
+    resolution: {integrity: sha512-nO6jcEfZWQXDhOiBtG2KvKyEptz7RVbpGP4vTD2hLBdmNQSsCiicO2Ioinv6UI4y9ukqnBpy+XZ9H6uLNgJTlw==}
+
   jest-diff@30.2.0:
     resolution: {integrity: sha512-dQHFo3Pt4/NLlG5z4PxZ/3yZTZ1C7s9hveiOj+GCN+uT109NC2QgsoVZsVOAvbJ3RgKkvyLGXZV9+piDpWbm6A==}
     engines: {node: ^18.14.0 || ^20.0.0 || ^22.0.0 || >=24.0.0}
@@ -4498,6 +4538,11 @@ packages:
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
+
+  mathjs@10.6.4:
+    resolution: {integrity: sha512-omQyvRE1jIy+3k2qsqkWASOcd45aZguXZDckr3HtnTYyXk5+2xpVfC3kATgbO2Srjxlqww3TVdhD0oUdZ/hiFA==}
+    engines: {node: '>= 14'}
+    hasBin: true
 
   md5.js@1.3.5:
     resolution: {integrity: sha512-xitP+WxNPcTTOgnTJcrhM0xvdPepipPSf3I8EIpGKeFLjt3PlJLIDG3u8EX53ZIubkb+5U2+3rELYpEhHhzdkg==}
@@ -5043,6 +5088,14 @@ packages:
     resolution: {integrity: sha512-d+JFcLM17njZaOLkv6SCev7uoLaBtfK86vMUXhW1Z4glPWh4jozno9APvW/XKFJ3CCxVoC7OL38BqRydtu5nGg==}
     engines: {node: '>=12'}
 
+  prb-math@2.4.3:
+    resolution: {integrity: sha512-t5jncEscKmWg7COkMkmbXXxSeDI6Xl21rxx5e+oxUCqskNvsu6Q9RqdVfGY6y+sMwyMQE8DJ/OOyQ9ExH1yfbw==}
+    deprecated: package no longer maintained, you should install @prb/math instead
+    peerDependencies:
+      '@ethersproject/bignumber': 5.x
+      evm-bn: 1.x
+      mathjs: 10.x
+
   preact-render-to-string@5.2.6:
     resolution: {integrity: sha512-JyhErpYOvBV1hEPwIxc/fHWXPfnEGdRKxc8gFdAZ7XV4tlzyzG847XAyEZqoDnynP88akM4eaHcSOzNcLWFguw==}
     peerDependencies:
@@ -5340,6 +5393,9 @@ packages:
 
   secure-json-parse@2.7.0:
     resolution: {integrity: sha512-6aU+Rwsezw7VR8/nyvKTx8QpWH9FrcYiXXlqC4z5d5XQBDRqtbfsRjnwGyqbi3gddNtWHuEk9OANUotL26qKUw==}
+
+  seedrandom@3.0.5:
+    resolution: {integrity: sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==}
 
   semver@5.7.2:
     resolution: {integrity: sha512-cBznnQ9KjJqU67B52RMC65CMarK2600WFnbkcaiwWq3xy/5haFJlshgnpjovMVJ+Hff49d8GEn0b87C5pDQ10g==}
@@ -5671,6 +5727,9 @@ packages:
   tiny-case@1.0.3:
     resolution: {integrity: sha512-Eet/eeMhkO6TX8mnUteS9zgPbUMQa4I6Kkp5ORiBD5476/m+PIRiumP5tmh5ioJpH7k51Kehawy2UDfsnxxY8Q==}
 
+  tiny-emitter@2.1.0:
+    resolution: {integrity: sha512-NB6Dk1A9xgQPMoGqC5CVXn123gWyte215ONT5Pp5a0yt4nlEoO1ZWeCwpncaekPHXO60i47ihFnZPiRPjRMq4Q==}
+
   tiny-warning@1.0.3:
     resolution: {integrity: sha512-lBN9zLN/oAf68o3zNXYrdCt1kP8WsiGW8Oo2ka41b2IM5JL/S1CTyX1rW0mb/zSuJun0ZUrDxx4sqvYS2FWzPA==}
 
@@ -5813,6 +5872,10 @@ packages:
   typed-array-buffer@1.0.3:
     resolution: {integrity: sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw==}
     engines: {node: '>= 0.4'}
+
+  typed-function@2.1.0:
+    resolution: {integrity: sha512-bctQIOqx2iVbWGDGPWwIm18QScpu2XRmkC19D8rQGFsjKSgteq/o1hTZvIG/wuDq8fanpBDrLkLq+aEN/6y5XQ==}
+    engines: {node: '>= 10'}
 
   typedarray@0.0.6:
     resolution: {integrity: sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==}
@@ -8376,6 +8439,12 @@ snapshots:
       - '@swc/core'
       - debug
 
+  '@openzeppelin/contracts-upgradeable@5.2.0(@openzeppelin/contracts@5.2.0)':
+    dependencies:
+      '@openzeppelin/contracts': 5.2.0
+
+  '@openzeppelin/contracts@5.2.0': {}
+
   '@panva/hkdf@1.2.1': {}
 
   '@petamoriken/float16@3.9.3': {}
@@ -9743,6 +9812,8 @@ snapshots:
 
   commander@8.3.0: {}
 
+  complex.js@2.4.3: {}
+
   concat-map@0.0.1: {}
 
   concat-stream@1.6.2:
@@ -9833,6 +9904,8 @@ snapshots:
       supports-color: 8.1.1
 
   decamelize@4.0.0: {}
+
+  decimal.js@10.6.0: {}
 
   deep-eql@4.1.4:
     dependencies:
@@ -10073,6 +10146,8 @@ snapshots:
 
   escape-html@1.0.3: {}
 
+  escape-latex@1.2.0: {}
+
   escape-string-regexp@1.0.5: {}
 
   escape-string-regexp@2.0.0: {}
@@ -10222,6 +10297,11 @@ snapshots:
 
   event-target-shim@5.0.1: {}
 
+  evm-bn@1.1.2(@ethersproject/bignumber@5.8.0):
+    dependencies:
+      '@ethersproject/bignumber': 5.8.0
+      from-exponential: 1.1.1
+
   evp_bytestokey@1.0.3:
     dependencies:
       md5.js: 1.3.5
@@ -10361,6 +10441,8 @@ snapshots:
 
   fp-ts@1.19.3: {}
 
+  fraction.js@4.3.7: {}
+
   fraction.js@5.3.4: {}
 
   framer-motion@12.34.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
@@ -10373,6 +10455,8 @@ snapshots:
       react-dom: 19.2.4(react@19.2.4)
 
   fresh@0.5.2: {}
+
+  from-exponential@1.1.1: {}
 
   front-matter@4.0.2:
     dependencies:
@@ -10846,6 +10930,8 @@ snapshots:
       filelist: 1.0.6
       picocolors: 1.1.1
 
+  javascript-natural-sort@0.7.1: {}
+
   jest-diff@30.2.0:
     dependencies:
       '@jest/diff-sequences': 30.0.1
@@ -11096,6 +11182,18 @@ snapshots:
   marky@1.3.0: {}
 
   math-intrinsics@1.1.0: {}
+
+  mathjs@10.6.4:
+    dependencies:
+      '@babel/runtime': 7.28.6
+      complex.js: 2.4.3
+      decimal.js: 10.6.0
+      escape-latex: 1.2.0
+      fraction.js: 4.3.7
+      javascript-natural-sort: 0.7.1
+      seedrandom: 3.0.5
+      tiny-emitter: 2.1.0
+      typed-function: 2.1.0
 
   md5.js@1.3.5:
     dependencies:
@@ -11786,6 +11884,13 @@ snapshots:
 
   postgres@3.4.8: {}
 
+  prb-math@2.4.3(@ethersproject/bignumber@5.8.0)(evm-bn@1.1.2(@ethersproject/bignumber@5.8.0))(mathjs@10.6.4):
+    dependencies:
+      '@ethersproject/bignumber': 5.8.0
+      decimal.js: 10.6.0
+      evm-bn: 1.1.2(@ethersproject/bignumber@5.8.0)
+      mathjs: 10.6.4
+
   preact-render-to-string@5.2.6(preact@10.28.4):
     dependencies:
       preact: 10.28.4
@@ -12147,6 +12252,8 @@ snapshots:
       node-gyp-build: 4.8.4
 
   secure-json-parse@2.7.0: {}
+
+  seedrandom@3.0.5: {}
 
   semver@5.7.2: {}
 
@@ -12593,6 +12700,8 @@ snapshots:
 
   tiny-case@1.0.3: {}
 
+  tiny-emitter@2.1.0: {}
+
   tiny-warning@1.0.3: {}
 
   tinybench@2.9.0: {}
@@ -12725,6 +12834,8 @@ snapshots:
       call-bound: 1.0.4
       es-errors: 1.3.0
       is-typed-array: 1.1.15
+
+  typed-function@2.1.0: {}
 
   typedarray@0.0.6: {}
 

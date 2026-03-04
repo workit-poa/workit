@@ -59,19 +59,6 @@ pnpm --filter @workit-poa/contracts test:local
 - `eth_chainId`
 - `eth_blockNumber`
 
-## Deploy to Hedera
-
-Set keys in `libs/contracts/.env` or `libs/contracts/.env.local`, then run one of:
-
-```bash
-pnpm --filter @workit-poa/contracts deploy:local
-pnpm --filter @workit-poa/contracts deploy:testnet
-pnpm --filter @workit-poa/contracts deploy:previewnet
-pnpm --filter @workit-poa/contracts deploy:mainnet
-```
-
-`deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://localhost:7546`).
-
 ## Open a console on Hedera
 
 ```bash

@@ -69,6 +69,25 @@ function parsePositiveSafeInteger(name: string, value: string | undefined, fallb
   return parsed;
 }
 
+function parseDeployArgs(value: string | undefined): unknown[] {
+  if (value === undefined || value.trim() === "") {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    throw new Error("DEMO_DEPLOY_ARGS_JSON must be valid JSON.", { cause: error });
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("DEMO_DEPLOY_ARGS_JSON must be a JSON array.");
+  }
+
+  return parsed;
+}
+
 interface HardhatArtifact {
   contractName?: string;
   abi: InterfaceAbi;
@@ -173,12 +192,15 @@ async function run(): Promise<void> {
   }
   const userId = process.env.DEMO_USER_ID || `demo-user-${Date.now()}`;
   const message = process.env.DEMO_TOPIC_MESSAGE || `workit-kms-demo ${new Date().toISOString()}`;
-  const greeting = process.env.DEMO_CONTRACT_GREETING || `Hello from Workit KMS deploy @ ${new Date().toISOString()}`;
   const transferTinybar = parsePositiveSafeInteger("DEMO_TRANSFER_TINYBAR", process.env.DEMO_TRANSFER_TINYBAR, 1);
   const demoMode = parseDemoMode(process.env.DEMO_MODE);
+  const deployArgs = parseDeployArgs(process.env.DEMO_DEPLOY_ARGS_JSON);
   const artifactPath =
     process.env.DEMO_HARDHAT_ARTIFACT_PATH ||
-    resolve(process.cwd(), "../../libs/contracts/artifacts/contracts/Greeter.sol/Greeter.json");
+    resolve(
+      process.cwd(),
+      "../../libs/contracts/artifacts/contracts/uniswap-v2/UniswapV2Pair.sol/UniswapV2Pair.json",
+    );
   const demoEvmRpcUrl = process.env.DEMO_EVM_RPC_URL?.trim() || undefined;
   const initialHbar = parseOptionalNonNegativeNumber("HEDERA_NEW_ACCOUNT_INITIAL_HBAR", process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR);
 
@@ -278,7 +300,7 @@ async function run(): Promise<void> {
       const nonce = await provider.getTransactionCount(deployerAddress, "pending");
 
       const factory = new ContractFactory(artifact.abi, artifact.bytecode);
-      const deployTx = await factory.getDeployTransaction(greeting);
+      const deployTx = await factory.getDeployTransaction(...deployArgs);
       if (!deployTx.data) {
         throw new Error(`Hardhat artifact "${artifactPath}" does not contain deployable bytecode.`);
       }
