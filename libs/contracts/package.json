@@ -8,8 +8,10 @@
     "lint": "tsc --noEmit -p tsconfig.json",
     "clean": "hardhat clean",
     "compile": "hardhat compile",
-    "test": "hardhat test",
+    "test": "hardhat test --network hardhat",
+    "test:local": "hardhat test --network hederaLocal",
     "node": "hardhat node",
+    "ping:local": "hardhat hedera:ping --network hederaLocal",
     "console:local": "hardhat console --network hederaLocal",
     "console:testnet": "hardhat console --network hederaTestnet",
     "console:previewnet": "hardhat console --network hederaPreviewnet",
@@ -17,9 +19,12 @@
     "deploy:local": "hardhat run scripts/deploy.ts --network hederaLocal",
     "deploy:testnet": "hardhat run scripts/deploy.ts --network hederaTestnet",
     "deploy:previewnet": "hardhat run scripts/deploy.ts --network hederaPreviewnet",
-    "deploy:mainnet": "hardhat run scripts/deploy.ts --network hederaMainnet"
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network hederaMainnet",
+    "hcs:local": "tsx scripts/hcs-local.ts",
+    "hts:local": "tsx scripts/hts-local.ts"
   },
   "devDependencies": {
+    "@hashgraph/sdk": "^2.62.0",
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
@@ -28,6 +33,7 @@
     "dotenv": "^16.4.5",
     "hardhat": "^2.22.18",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
     "typescript": "^5.7.2"
   }
 }

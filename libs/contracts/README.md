@@ -16,6 +16,24 @@ cp libs/contracts/.env.example libs/contracts/.env
 pnpm install
 ```
 
+## Start Hedera local stack (repo root)
+
+```bash
+pnpm hedera:local:start
+pnpm hedera:local:status
+pnpm hedera:local:keys
+```
+
+The local stack endpoints are:
+
+- Consensus node: `http://localhost:50211`
+- Mirror gRPC: `http://localhost:5600`
+- Mirror REST: `http://localhost:5551`
+- JSON-RPC relay: `http://localhost:7546`
+- JSON-RPC relay WS: `http://localhost:8546`
+
+`pnpm hedera:local:keys` generates `libs/contracts/.env.local` from funded account logs.
+
 ## Compile and test
 
 ```bash
@@ -23,9 +41,27 @@ pnpm --filter @workit-poa/contracts compile
 pnpm --filter @workit-poa/contracts test
 ```
 
+## Test against local Hedera relay
+
+```bash
+pnpm --filter @workit-poa/contracts ping:local
+pnpm --filter @workit-poa/contracts test:local
+```
+
+`hederaLocal` in Hardhat is configured with:
+
+- `url=http://localhost:7546`
+- `chainId=298`
+- `accounts` from `HEDERA_PRIVATE_KEY`, `HEDERA_PRIVATE_KEYS`, or generated `HEDERA_LOCAL_PRIVATE_KEY_*` values.
+
+`ping:local` executes the Hardhat task `hedera:ping` and prints:
+
+- `eth_chainId`
+- `eth_blockNumber`
+
 ## Deploy to Hedera
 
-Set `HEDERA_PRIVATE_KEY` in `libs/contracts/.env`, then run one of:
+Set keys in `libs/contracts/.env` or `libs/contracts/.env.local`, then run one of:
 
 ```bash
 pnpm --filter @workit-poa/contracts deploy:local
@@ -34,7 +70,7 @@ pnpm --filter @workit-poa/contracts deploy:previewnet
 pnpm --filter @workit-poa/contracts deploy:mainnet
 ```
 
-`deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://127.0.0.1:7546`).
+`deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://localhost:7546`).
 
 ## Open a console on Hedera
 
@@ -50,3 +86,17 @@ pnpm --filter @workit-poa/contracts console:mainnet
 If `HEDERA_NETWORK` is set in `.env`, Hardhat uses it as the default when `--network` is not provided.
 
 Valid values: `hardhat`, `local`, `testnet`, `previewnet`, `mainnet`.
+
+## Local HCS + HTS helper scripts
+
+Run from repo root:
+
+```bash
+pnpm hedera:hcs:local
+pnpm hedera:hts:local
+```
+
+- `hedera:hcs:local`: creates an HCS topic and submits a message.
+- `hedera:hts:local`: creates a fungible HTS token, associates recipient, and transfers tokens.
+
+Both scripts use local operator/account env values from `libs/contracts/.env` or `.env.local`.

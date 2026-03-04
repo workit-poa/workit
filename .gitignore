@@ -8,3 +8,6 @@ dist
 coverage
 *.log
 .next
+dev/hedera-local-node/hiero-local-node
+dev/hedera-local-node/.cache
+libs/contracts/.env.local

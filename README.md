@@ -35,6 +35,40 @@ pnpm dev
 - `pnpm affected:build`: Build only affected projects
 - `pnpm graph`: Visualize dependency graph
 
+## Hedera Local Environment (HCS + HTS + EVM)
+
+Start local Hedera stack (Consensus + Mirror + JSON-RPC relay):
+
+```bash
+pnpm hedera:local:start
+```
+
+Health/status:
+
+```bash
+pnpm hedera:local:status
+pnpm hedera:local:logs
+pnpm hedera:local:stop
+```
+
+Funded local keys to contracts env:
+
+```bash
+pnpm hedera:local:keys
+```
+
+Then run local contract flows:
+
+```bash
+pnpm contracts:ping:local
+pnpm contracts:test:local
+pnpm contracts:deploy:local
+pnpm hedera:hcs:local
+pnpm hedera:hts:local
+```
+
+See `dev/hedera-local-node/README.md` and `libs/contracts/README.md` for detailed setup and env variables.
+
 ## Workit Landing + Auth
 
 - Run locally:

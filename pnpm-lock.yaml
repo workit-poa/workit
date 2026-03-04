@@ -137,6 +137,9 @@ importers:
 
   libs/contracts:
     devDependencies:
+      '@hashgraph/sdk':
+        specifier: ^2.62.0
+        version: 2.80.0(bn.js@5.2.1)(react-native@0.84.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))
       '@nomicfoundation/hardhat-toolbox':
         specifier: ^5.0.0
         version: 5.0.0(be7pksanq2kd4cgzhw42dfks4y)
@@ -161,6 +164,9 @@ importers:
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@22.19.13)(typescript@5.9.3)
+      tsx:
+        specifier: ^4.20.3
+        version: 4.21.0
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

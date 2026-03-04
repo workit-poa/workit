@@ -1,13 +1,14 @@
-import { HardhatUserConfig } from "hardhat/config";
+import { HardhatUserConfig, task } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import dotenv from "dotenv";
 
 dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
 
 type HederaNetworkName = "hardhat" | "hederaLocal" | "hederaTestnet" | "hederaPreviewnet" | "hederaMainnet";
 
 const HEDERA_RPC_DEFAULTS = {
-  local: "http://127.0.0.1:7546",
+  local: "http://localhost:7546",
   testnet: "https://testnet.hashio.io/api",
   previewnet: "https://previewnet.hashio.io/api",
   mainnet: "https://mainnet.hashio.io/api",
@@ -25,8 +26,31 @@ function normalizePrivateKey(value?: string): string | undefined {
   return value.startsWith("0x") ? value : `0x${value}`;
 }
 
-const hederaPrivateKey = normalizePrivateKey(process.env.HEDERA_PRIVATE_KEY ?? process.env.DEPLOYER_PRIVATE_KEY);
-const accounts = hederaPrivateKey ? [hederaPrivateKey] : [];
+function collectAccounts(): string[] {
+  const explicitList = (process.env.HEDERA_PRIVATE_KEYS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const candidates = [
+    process.env.HEDERA_PRIVATE_KEY,
+    process.env.DEPLOYER_PRIVATE_KEY,
+    process.env.HEDERA_LOCAL_PRIVATE_KEY_1,
+    process.env.HEDERA_LOCAL_PRIVATE_KEY_2,
+    ...explicitList,
+  ];
+
+  const unique = new Set<string>();
+  for (const value of candidates) {
+    const normalized = normalizePrivateKey(value);
+    if (normalized) {
+      unique.add(normalized);
+    }
+  }
+  return Array.from(unique);
+}
+
+const accounts = collectAccounts();
 
 const defaultNetworkMap: Record<string, HederaNetworkName> = {
   hardhat: "hardhat",
@@ -38,6 +62,26 @@ const defaultNetworkMap: Record<string, HederaNetworkName> = {
 };
 
 const defaultNetwork = defaultNetworkMap[(process.env.HEDERA_NETWORK ?? "hardhat").toLowerCase()] ?? "hardhat";
+
+task("hedera:ping", "Ping JSON-RPC relay using eth_chainId and eth_blockNumber").setAction(async (_, hre) => {
+  const [chainIdRaw, blockNumberRaw] = await Promise.all([
+    hre.network.provider.request({
+      method: "eth_chainId",
+      params: [],
+    }) as Promise<string>,
+    hre.network.provider.request({
+      method: "eth_blockNumber",
+      params: [],
+    }) as Promise<string>,
+  ]);
+
+  const chainId = Number.parseInt(chainIdRaw, 16);
+  const blockNumber = Number.parseInt(blockNumberRaw, 16);
+
+  console.log(`network=${hre.network.name}`);
+  console.log(`eth_chainId=${chainIdRaw} (${Number.isNaN(chainId) ? "n/a" : chainId})`);
+  console.log(`eth_blockNumber=${blockNumberRaw} (${Number.isNaN(blockNumber) ? "n/a" : blockNumber})`);
+});
 
 const config: HardhatUserConfig = {
   defaultNetwork,
