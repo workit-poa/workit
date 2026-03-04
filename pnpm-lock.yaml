@@ -105,6 +105,9 @@ importers:
       dotenv:
         specifier: ^16.4.5
         version: 16.4.7
+      ethers:
+        specifier: ^6.15.0
+        version: 6.16.0
 
   libs/auth:
     dependencies:
@@ -182,6 +185,9 @@ importers:
       '@noble/hashes':
         specifier: ^1.7.1
         version: 1.7.1
+      ethers:
+        specifier: ^6.15.0
+        version: 6.16.0
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^3.2.4

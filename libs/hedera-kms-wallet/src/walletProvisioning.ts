@@ -200,7 +200,7 @@ export async function provisionHederaAccountForUser(
       operatorKey
     });
 
-    let accountCreateTx = new AccountCreateTransaction().setKey(signer.hederaPublicKey);
+    let accountCreateTx = new AccountCreateTransaction().setECDSAKeyWithAlias(signer.hederaPublicKey);
     if (initialHbar !== undefined && initialHbar > 0) {
       accountCreateTx = accountCreateTx.setInitialBalance(new Hbar(initialHbar));
     }

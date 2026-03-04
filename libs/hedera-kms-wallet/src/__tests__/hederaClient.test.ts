@@ -57,6 +57,7 @@ function createSigner(overrides?: Partial<KmsHederaSigner>): KmsHederaSigner {
     hederaPublicKey: privateKey.publicKey,
     uncompressedPublicKey: Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 0xaa)]),
     compressedPublicKey: Buffer.concat([Buffer.from([0x02]), Buffer.alloc(32, 0xbb)]),
+    signDigest: async () => Buffer.alloc(64, 0x01),
     sign: async () => Buffer.alloc(64, 0x01),
     ...overrides
   };

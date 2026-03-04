@@ -9,6 +9,7 @@
   "dependencies": {
     "@aws-sdk/client-kms": "^3.900.0",
     "@workit-poa/hedera-kms-wallet": "workspace:*",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "ethers": "^6.15.0"
   }
 }

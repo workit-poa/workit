@@ -1,12 +1,18 @@
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { KMSClient } from "@aws-sdk/client-kms";
+import { ContractFactory, getAddress, type InterfaceAbi } from "ethers";
 import {
+  createHederaJsonRpcProvider,
   createHederaClientFromEnv,
   createKmsHederaSigner,
+  mirrorLinkForTransaction,
   provisionHederaAccountForUser,
+  resolveHederaEvmConnection,
+  signEvmTransactionWithKmsWallet,
   submitTopicMessageWithKmsSignature,
-  submitTinybarTransferWithKmsSignature
+  submitTinybarTransferWithKmsSignature,
 } from "@workit-poa/hedera-kms-wallet";
 
 let activeCleanup: (() => Promise<void>) | undefined;
@@ -33,10 +39,10 @@ function loadEnvForDemo(): void {
   loadDotenv({ path: packageEnv, override: false });
 }
 
-function parseDemoMode(value: string | undefined): "topic" | "transfer" {
-  const normalized = (value || "topic").toLowerCase();
-  if (normalized !== "topic" && normalized !== "transfer") {
-    throw new Error(`Invalid DEMO_MODE "${value}". Expected "topic" or "transfer".`);
+function parseDemoMode(value: string | undefined): "deploy" | "topic" | "transfer" {
+  const normalized = (value || "deploy").toLowerCase();
+  if (normalized !== "deploy" && normalized !== "topic" && normalized !== "transfer") {
+    throw new Error(`Invalid DEMO_MODE "${value}". Expected "deploy", "topic", or "transfer".`);
   }
   return normalized;
 }
@@ -63,6 +69,101 @@ function parsePositiveSafeInteger(name: string, value: string | undefined, fallb
   return parsed;
 }
 
+interface HardhatArtifact {
+  contractName?: string;
+  abi: InterfaceAbi;
+  bytecode: string;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function mirrorRestCandidates(network: "testnet" | "mainnet"): string[] {
+  const envMirror = process.env.DEMO_MIRROR_REST_URL?.trim();
+  if (envMirror) {
+    return [envMirror.replace(/\/+$/, "")];
+  }
+
+  if (network === "testnet") {
+    return ["https://testnet.mirrornode.hedera.com"];
+  }
+
+  return ["https://mainnet-public.mirrornode.hedera.com", "https://mainnet.mirrornode.hedera.com"];
+}
+
+async function resolveMirrorLinkForEvmHash(
+  network: "testnet" | "mainnet",
+  txHash: string,
+): Promise<{ hashscanLink?: string; mirrorResultUrl?: string }> {
+  const normalizedHash = txHash.trim().toLowerCase();
+  if (!normalizedHash) {
+    return {};
+  }
+
+  const candidates = mirrorRestCandidates(network);
+  const maxAttempts = 6;
+  const delayMs = 1500;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    for (const base of candidates) {
+      const mirrorResultUrl = `${base}/api/v1/contracts/results/${normalizedHash}`;
+      try {
+        const response = await fetch(mirrorResultUrl);
+        if (!response.ok) {
+          continue;
+        }
+
+        const payload = (await response.json()) as { transaction_id?: string };
+        const transactionId = payload.transaction_id?.trim();
+        if (transactionId) {
+          return {
+            hashscanLink: mirrorLinkForTransaction(network, transactionId),
+            mirrorResultUrl,
+          };
+        }
+      } catch {
+        // Ignore transient mirror fetch issues and continue retries.
+      }
+    }
+
+    await sleep(delayMs);
+  }
+
+  return {};
+}
+
+async function readHardhatArtifact(artifactPath: string): Promise<HardhatArtifact> {
+  let raw: string;
+  try {
+    raw = await readFile(artifactPath, "utf8");
+  } catch (error) {
+    throw new Error(
+      `Unable to read Hardhat artifact at "${artifactPath}". ` +
+        "Run `pnpm --filter @workit-poa/contracts compile` and verify DEMO_HARDHAT_ARTIFACT_PATH.",
+      { cause: error }
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Artifact file is not valid JSON: "${artifactPath}"`, { cause: error });
+  }
+
+  const artifact = parsed as Partial<HardhatArtifact>;
+  if (!artifact?.abi || !Array.isArray(artifact.abi) || typeof artifact.bytecode !== "string") {
+    throw new Error(`Artifact "${artifactPath}" must contain both 'abi' and 'bytecode'.`);
+  }
+
+  return {
+    contractName: artifact.contractName,
+    abi: artifact.abi,
+    bytecode: artifact.bytecode,
+  };
+}
+
 async function run(): Promise<void> {
   loadEnvForDemo();
 
@@ -72,8 +173,13 @@ async function run(): Promise<void> {
   }
   const userId = process.env.DEMO_USER_ID || `demo-user-${Date.now()}`;
   const message = process.env.DEMO_TOPIC_MESSAGE || `workit-kms-demo ${new Date().toISOString()}`;
+  const greeting = process.env.DEMO_CONTRACT_GREETING || `Hello from Workit KMS deploy @ ${new Date().toISOString()}`;
   const transferTinybar = parsePositiveSafeInteger("DEMO_TRANSFER_TINYBAR", process.env.DEMO_TRANSFER_TINYBAR, 1);
   const demoMode = parseDemoMode(process.env.DEMO_MODE);
+  const artifactPath =
+    process.env.DEMO_HARDHAT_ARTIFACT_PATH ||
+    resolve(process.cwd(), "../../libs/contracts/artifacts/contracts/Greeter.sol/Greeter.json");
+  const demoEvmRpcUrl = process.env.DEMO_EVM_RPC_URL?.trim() || undefined;
   const initialHbar = parseOptionalNonNegativeNumber("HEDERA_NEW_ACCOUNT_INITIAL_HBAR", process.env.HEDERA_NEW_ACCOUNT_INITIAL_HBAR);
 
   const { client, network, operatorId } = createHederaClientFromEnv();
@@ -163,7 +269,79 @@ async function run(): Promise<void> {
     console.log(`  accountId: ${accountId}`);
     console.log(`  compressedPublicKey: ${signer.compressedPublicKey.toString("hex")}`);
 
-    if (demoMode === "transfer") {
+    if (demoMode === "deploy") {
+      const artifact = await readHardhatArtifact(artifactPath);
+      const evmConnection = resolveHederaEvmConnection({ network, rpcUrl: demoEvmRpcUrl });
+      const provider = createHederaJsonRpcProvider(evmConnection);
+      const deployerAddress = getAddress(signer.hederaPublicKey.toEvmAddress());
+      const networkInfo = await provider.getNetwork();
+      const nonce = await provider.getTransactionCount(deployerAddress, "pending");
+
+      const factory = new ContractFactory(artifact.abi, artifact.bytecode);
+      const deployTx = await factory.getDeployTransaction(greeting);
+      if (!deployTx.data) {
+        throw new Error(`Hardhat artifact "${artifactPath}" does not contain deployable bytecode.`);
+      }
+
+      let estimatedGas = 1_500_000n;
+      try {
+        estimatedGas = await provider.estimateGas({
+          from: deployerAddress,
+          data: deployTx.data,
+          value: deployTx.value ?? 0n
+        });
+      } catch {
+        // Fall back to a conservative gas limit when estimation is unavailable.
+      }
+      const gasLimit = (estimatedGas * 120n) / 100n;
+      const feeData = await provider.getFeeData();
+
+      const unsignedDeployTx = {
+        ...deployTx,
+        chainId: Number(networkInfo.chainId),
+        nonce,
+        gasLimit,
+      };
+
+      if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+        Object.assign(unsignedDeployTx, {
+          type: 2,
+          maxFeePerGas: feeData.maxFeePerGas,
+          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas
+        });
+      } else {
+        Object.assign(unsignedDeployTx, {
+          gasPrice: feeData.gasPrice ?? 1n
+        });
+      }
+
+      const { signedTransaction } = await signEvmTransactionWithKmsWallet({
+        kms,
+        keyId,
+        provider,
+        transaction: unsignedDeployTx
+      });
+      const txResponse = await provider.broadcastTransaction(signedTransaction);
+      const receipt = await txResponse.wait();
+      if (!receipt?.contractAddress) {
+        throw new Error("Deployment receipt did not include contractAddress.");
+      }
+
+      console.log("Deployed Hardhat contract using KMS-backed wallet (EVM)");
+      console.log(`  contract: ${artifact.contractName ?? "UnknownContract"}`);
+      console.log(`  address: ${receipt.contractAddress}`);
+      console.log(`  txHash: ${txResponse.hash}`);
+      console.log(`  deployer: ${deployerAddress}`);
+      console.log(`  chainId: ${networkInfo.chainId}`);
+      console.log(`  rpcUrl: ${evmConnection.rpcUrl}`);
+      const mirror = await resolveMirrorLinkForEvmHash(network, txResponse.hash);
+      if (mirror.hashscanLink) {
+        console.log(`  mirror: ${mirror.hashscanLink}`);
+      }
+      if (mirror.mirrorResultUrl) {
+        console.log(`  mirrorResult: ${mirror.mirrorResultUrl}`);
+      }
+    } else if (demoMode === "transfer") {
       const transferResult = await submitTinybarTransferWithKmsSignature({
         client,
         signer,

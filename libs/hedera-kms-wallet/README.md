@@ -319,7 +319,44 @@ const transfer = await submitTinybarTransferWithKmsSignature({
 
 `payerAccountId` lets you charge network fees to the KMS-managed wallet account instead of the operator account.
 
-### 4) Rotate Hedera account key
+### 4) Sign an EVM transaction with KMS wallet
+
+```ts
+import { KMSClient } from "@aws-sdk/client-kms";
+import {
+  createHederaJsonRpcProvider,
+  signEvmTransactionWithKmsWallet
+} from "@workit-poa/hedera-kms-wallet";
+
+const kms = new KMSClient({ region: process.env.AWS_REGION });
+const provider = createHederaJsonRpcProvider({ network: "testnet" });
+
+const { signedTransaction } = await signEvmTransactionWithKmsWallet({
+  kms,
+  keyId: "kms-key-id",
+  provider,
+  transaction: {
+    to: "0x000000000000000000000000000000000000dead",
+    value: 1n,
+    chainId: 296,
+    nonce: 0,
+    gasLimit: 21_000n,
+    maxFeePerGas: 1_000_000_000n,
+    maxPriorityFeePerGas: 1_000_000_000n
+  }
+});
+
+const tx = await provider.broadcastTransaction(signedTransaction);
+console.log(tx.hash);
+```
+
+Consumer applications are responsible for:
+- building transaction payloads,
+- setting nonce/fees/gas,
+- broadcasting signed raw transactions,
+- handling receipts and retries.
+
+### 5) Rotate Hedera account key
 
 AWS asymmetric secp256k1 keys do not support in-place automatic rotation. Use managed replacement:
 
@@ -489,7 +526,17 @@ All exports are re-exported from [`src/index.ts`](./src/index.ts).
   - `keyId`, `keyArn`
   - `hederaPublicKey`
   - `compressedPublicKey`, `uncompressedPublicKey`
+  - `signDigest(digest32)`
   - `sign(message)`
+
+### EVM helpers (`evmClient`)
+
+- `parseHederaEvmNetwork(value?)`
+- `resolveHederaEvmConnection({ network?, rpcUrl? })`
+- `createHederaJsonRpcProvider({ network?, rpcUrl? })`
+- `evmAddressFromUncompressedPublicKey(uncompressedPublicKey)`
+- `createKmsEvmSigner({ kms, keyId, provider?, auditLogger? })`
+- `signEvmTransactionWithKmsWallet({ kms, keyId, provider?, auditLogger?, transaction })`
 
 ### Hedera helpers (`hederaClient`)
 

@@ -56,7 +56,10 @@ test("createKmsHederaSigner derives Hedera key and signs with KMS digest mode", 
 
   const signature = await signer.sign(Buffer.from("hello-workit"));
   assert.equal(signature.length, 64);
-  assert.equal(commands.length, 3);
+  const digestSignature = await signer.signDigest(Buffer.alloc(32, 0x11));
+  assert.equal(digestSignature.length, 64);
+  await assert.rejects(() => signer.signDigest(Buffer.alloc(31, 0x11)), /digest must be 32 bytes/);
+  assert.equal(commands.length, 4);
   assert.equal(
     auditEvents.some(event => event.operation === "DescribeKey" && event.status === "success"),
     true

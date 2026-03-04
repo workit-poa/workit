@@ -1,3 +1,4 @@
+export * from "./evmClient";
 export * from "./hederaClient";
 export * from "./hederaKeyCodec";
 export * from "./kmsKeyManager";

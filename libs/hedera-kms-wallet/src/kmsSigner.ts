@@ -10,6 +10,7 @@ export interface KmsHederaSigner {
   hederaPublicKey: PublicKey;
   uncompressedPublicKey: Buffer;
   compressedPublicKey: Buffer;
+  signDigest: (digest: Uint8Array) => Promise<Uint8Array>;
   sign: (message: Uint8Array) => Promise<Uint8Array>;
 }
 
@@ -32,11 +33,11 @@ export async function createKmsHederaSigner(params: CreateKmsHederaSignerParams)
   const compressedPublicKey = compressPublicKey(uncompressedPublicKey);
   const hederaPublicKey = PublicKey.fromBytesECDSA(compressedPublicKey);
 
-  const sign = async (message: Uint8Array): Promise<Uint8Array> => {
-    // Hedera secp256k1 signatures are verified against keccak256(message).
-    // KMS can't do keccak internally, so we provide the digest directly.
-    const digest = Buffer.from(keccak_256(message));
-
+  const signDigest = async (digestInput: Uint8Array): Promise<Uint8Array> => {
+    const digest = Buffer.from(digestInput);
+    if (digest.length !== 32) {
+      throw new Error("digest must be 32 bytes");
+    }
     const response = await kms
       .send(
         new SignCommand({
@@ -80,12 +81,19 @@ export async function createKmsHederaSigner(params: CreateKmsHederaSignerParams)
     return kmsDerSignatureToHederaRaw64(response.Signature);
   };
 
+  const sign = async (message: Uint8Array): Promise<Uint8Array> => {
+    // Hedera secp256k1 signatures are verified against keccak256(message).
+    // KMS can't do keccak internally, so we provide the digest directly.
+    return signDigest(Buffer.from(keccak_256(message)));
+  };
+
   return {
     keyId: normalizedKeyId,
     keyArn: validatedKey.keyArn,
     hederaPublicKey,
     uncompressedPublicKey,
     compressedPublicKey,
+    signDigest,
     sign
   };
 }
