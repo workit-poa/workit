@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Epochs} from "../libraries/Epochs.sol";
-
 interface IRewards {
 	/*//////////////////////////////////////////////////////////////
 	                                EVENTS
@@ -11,8 +9,7 @@ interface IRewards {
 	/// @notice Emitted once during initialization
 	event RewardsInitialized(
 		address indexed workToken,
-		address indexed gtoken,
-		address indexed router
+		address indexed gtoken
 	);
 
 	/// @notice Emitted when new rewards are accounted for
@@ -33,7 +30,7 @@ interface IRewards {
 
 
 	/*//////////////////////////////////////////////////////////////
-	                              FUNCTIONS
+		                              FUNCTIONS
 	//////////////////////////////////////////////////////////////*/
 
 	function updateRewardReserve() external;

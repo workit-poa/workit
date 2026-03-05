@@ -71,9 +71,22 @@ pnpm --filter @workit-poa/contracts deploy:mainnet
 ```
 
 `deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://localhost:7546`).
-These deploy scripts install `WorkEmissionController` and `GToken` (both behind proxy) and create:
+These deploy scripts install `WorkEmissionController` and `GToken` (both behind proxy), deploy `Rewards`, and configure roles/collector:
 - `WRK` WorkIt HTS fungible token via `WorkEmissionController`
 - WorkIt governance HTS NFT token via `GToken`
+- `Rewards` initialized with `workToken`, `gToken`, and `workEmissionController`
+- `GToken.UPDATE_ROLE` granted to `Rewards`
+- Controller staking collector set to `Rewards` (or `WORK_STAKING_ADDRESS` if provided)
+
+Optional deploy env overrides (`libs/contracts/.env` or `.env.local`):
+- `WORK_TOKEN_CREATE_HBAR_TO_SEND`
+- `GOVERNANCE_NFT_CREATE_HBAR_TO_SEND`
+- `DEPLOY_GAS_LIMIT`
+- `GOVERNANCE_NFT_MAX_SUPPLY`
+- `GTOKEN_EPOCH_LENGTH_SECONDS`
+- `CREATE_GOVERNANCE_NFT`
+- `WORK_REWARDS_ADDRESS` (reuse existing rewards)
+- `WORK_STAKING_ADDRESS` (override collector)
 
 ## Open a console on Hedera
 
