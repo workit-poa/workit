@@ -10,7 +10,7 @@ interface IRewards {
 
 	/// @notice Emitted once during initialization
 	event RewardsInitialized(
-		address indexed gainz,
+		address indexed workToken,
 		address indexed gtoken,
 		address indexed router
 	);

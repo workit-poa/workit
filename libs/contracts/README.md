@@ -71,7 +71,9 @@ pnpm --filter @workit-poa/contracts deploy:mainnet
 ```
 
 `deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://localhost:7546`).
-These deploy scripts install `WorkEmissionController` (UUPS proxy) and create the WRK Workit HTS token.
+These deploy scripts install `WorkEmissionController` and `GToken` (both behind proxy) and create:
+- `WRK` WorkIt HTS fungible token via `WorkEmissionController`
+- WorkIt governance HTS NFT token via `GToken`
 
 ## Open a console on Hedera
 
