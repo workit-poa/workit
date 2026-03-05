@@ -20,10 +20,6 @@
     "deploy:testnet": "hardhat run scripts/deploy.ts --network hederaTestnet",
     "deploy:previewnet": "hardhat run scripts/deploy.ts --network hederaPreviewnet",
     "deploy:mainnet": "hardhat run scripts/deploy.ts --network hederaMainnet",
-    "deploy:work:local": "hardhat run scripts/deployWorkController.ts --network hederaLocal",
-    "deploy:work:testnet": "hardhat run scripts/deployWorkController.ts --network hederaTestnet",
-    "deploy:work:previewnet": "hardhat run scripts/deployWorkController.ts --network hederaPreviewnet",
-    "deploy:work:mainnet": "hardhat run scripts/deployWorkController.ts --network hederaMainnet",
     "hcs:local": "tsx scripts/hcs-local.ts",
     "hts:local": "tsx scripts/hts-local.ts"
   },
