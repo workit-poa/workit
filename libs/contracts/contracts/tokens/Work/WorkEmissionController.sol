@@ -39,9 +39,9 @@ contract WorkEmissionController is
 		Entities.Value entityFunds;
 	}
 
-	// keccak256(abi.encode(uint256(keccak256("work.WorkEmissionController.storage")) - 1)) & ~bytes32(uint256(0xff));
+	// keccak256("workit.contracts.tokens.WorkEmissionController") & ~bytes32(uint256(0xff))
 	bytes32 private constant WORK_EMISSION_CONTROLLER_STORAGE_LOCATION =
-		0xdfea2e23e2524b8be93121290a16665b5af39cc33a84c867bbbe9d2c2c488400;
+		0x6d5f076710d0950e44997c636088935ae60ff728127c24345853a09daf8c5400;
 
 	function _getWorkEmissionControllerStorage()
 		private

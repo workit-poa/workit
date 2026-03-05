@@ -42,9 +42,9 @@ abstract contract SFT is
 		string symbol;
 	}
 
-	// keccak256(abi.encode(uint256(keccak256("adex.sft.storage")) - 1)) & ~bytes32(uint256(0xff));
+	// keccak256("workit.contracts.abstracts.SFT") & ~bytes32(uint256(0xff))
 	bytes32 private constant SFT_STORAGE_LOCATION =
-		0x62c7181558777c0450efc6bc1cd8d37cd6f6f3ac939cea4e0ebf7ac80730d200;
+		0xc3fbed7a77c5006ede129c3fa1ba7eda8fd7f4309e200a8479dd4bc2bec21100;
 
 	function _getSFTStorage() private pure returns (SFTStorage storage s) {
 		assembly {

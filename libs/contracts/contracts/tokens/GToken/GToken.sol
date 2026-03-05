@@ -37,9 +37,9 @@ contract GToken is IGToken, SFT, UUPSUpgradeable {
         uint256 governanceNftSupply;
     }
 
-    // Retained slot for storage compatibility with earlier deployments.
+    // keccak256("workit.contracts.tokens.GToken") & ~bytes32(uint256(0xff))
     bytes32 private constant GTOKEN_STORAGE_LOCATION =
-        0xb8e7eb3bf49f83cb3ff588efef6ab82dab4dc692401ee0d26d4dc4d075b6c500;
+        0x20efedbc46f7d0712b2c6ed605c3ff1c601a0f7073a5fa51fd93adb6a0f55300;
 
     error InvalidAddress();
     error InvalidEpochLength();
