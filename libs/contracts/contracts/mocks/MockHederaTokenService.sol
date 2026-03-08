@@ -9,15 +9,26 @@ contract MockHederaTokenService {
 	int64 private constant FAIL_INVALID = 23;
 
 	uint160 private _tokenNonce;
+	int64 private _forcedNextResponseCode = SUCCESS;
+
 	mapping(address => bool) private _tokenCreated;
 	mapping(address => int64) private _nextSerial;
 	mapping(address => int64) private _supply;
 	mapping(address => mapping(int64 => address)) private _ownerOf;
 	mapping(address => mapping(address => bool)) private _associations;
 
+	function setNextResponseCode(int64 responseCode) external {
+		_forcedNextResponseCode = responseCode;
+	}
+
 	function createNonFungibleToken(
 		IHederaTokenService.HederaToken memory token
 	) external payable returns (int64 responseCode, address tokenAddress) {
+		responseCode = _consumeForcedResponseCode();
+		if (responseCode != SUCCESS) {
+			return (responseCode, address(0));
+		}
+
 		unchecked {
 			_tokenNonce += 1;
 		}
@@ -42,6 +53,10 @@ contract MockHederaTokenService {
 			int64[] memory serialNumbers
 		)
 	{
+		responseCode = _consumeForcedResponseCode();
+		if (responseCode != SUCCESS) {
+			return (responseCode, _supply[token], new int64[](0));
+		}
 		if (!_tokenCreated[token] || amount != 0) {
 			return (FAIL_INVALID, _supply[token], new int64[](0));
 		}
@@ -69,7 +84,14 @@ contract MockHederaTokenService {
 		address recipient,
 		int64 serialNumber
 	) external returns (int64 responseCode) {
+		responseCode = _consumeForcedResponseCode();
+		if (responseCode != SUCCESS) {
+			return responseCode;
+		}
 		if (!_tokenCreated[token] || recipient == address(0)) {
+			return FAIL_INVALID;
+		}
+		if (!_associations[token][recipient]) {
 			return FAIL_INVALID;
 		}
 		if (_ownerOf[token][serialNumber] != sender) {
@@ -84,6 +106,10 @@ contract MockHederaTokenService {
 		address account,
 		address token
 	) external returns (int64 responseCode) {
+		responseCode = _consumeForcedResponseCode();
+		if (responseCode != SUCCESS) {
+			return responseCode;
+		}
 		if (!_tokenCreated[token] || account == address(0)) {
 			return FAIL_INVALID;
 		}
@@ -97,6 +123,10 @@ contract MockHederaTokenService {
 		int64 amount,
 		int64[] memory serialNumbers
 	) external returns (int64 responseCode, int64 newTotalSupply) {
+		responseCode = _consumeForcedResponseCode();
+		if (responseCode != SUCCESS) {
+			return (responseCode, _supply[token]);
+		}
 		if (!_tokenCreated[token] || amount != 0) {
 			return (FAIL_INVALID, _supply[token]);
 		}
@@ -129,5 +159,13 @@ contract MockHederaTokenService {
 
 	function totalSupply(address token) external view returns (int64) {
 		return _supply[token];
+	}
+
+	function _consumeForcedResponseCode() private returns (int64 responseCode) {
+		responseCode = _forcedNextResponseCode;
+		if (responseCode == 0) {
+			responseCode = SUCCESS;
+		}
+		_forcedNextResponseCode = SUCCESS;
 	}
 }

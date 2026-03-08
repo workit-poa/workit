@@ -34,6 +34,19 @@ The local stack endpoints are:
 
 `pnpm hedera:local:keys` generates `libs/contracts/.env.local` from funded account logs.
 
+## Hybrid Position Model (HTS + EVM)
+
+`GToken` now uses a hybrid architecture:
+
+- HTS (`0x167`) is the source of truth for position ownership and NFT serial supply.
+- `HybridSFT`/`GToken` store EVM metadata (`tokenAttributes`), position value (`positionValue`), and split/merge rules.
+- Split/merge mint and burn HTS NFT serials while preserving protocol-level invariants in Solidity.
+
+### Association requirement
+
+Accounts must be associated with the position NFT token before receiving position transfers/mints.
+Use `associatePositionNft(account)` (admin-gated) or set auto-association externally.
+
 ## Compile and test
 
 ```bash
@@ -71,22 +84,31 @@ pnpm --filter @workit-poa/contracts deploy:mainnet
 ```
 
 `deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://localhost:7546`).
-These deploy scripts install `WorkEmissionController` and `GToken` (both behind proxy), deploy `Rewards`, and configure roles/collector:
-- `WRK` WorkIt HTS fungible token via `WorkEmissionController`
-- WorkIt governance HTS NFT token via `GToken`
-- `Rewards` initialized with `workToken`, `gToken`, and `workEmissionController`
-- `GToken.UPDATE_ROLE` granted to `Rewards`
-- Controller staking collector set to `Rewards` (or `WORK_STAKING_ADDRESS` if provided)
+Deploy flow:
+
+1. Deploy `WorkEmissionController` UUPS proxy.
+2. Create WRK HTS fungible token from the controller.
+3. Deploy `GToken` UUPS proxy (`initialize(admin, epochLength)`).
+4. Create position NFT token via `createPositionNft(maxSupply, name, symbol, memo)`.
+5. Optionally associate accounts from `POSITION_NFT_ASSOCIATE_ACCOUNTS`.
+6. Deploy/init `Rewards` (or reuse `WORK_REWARDS_ADDRESS`).
+7. Grant `GToken.UPDATE_ROLE` to `Rewards`.
+8. Set controller staking collector (`WORK_STAKING_ADDRESS` or rewards address).
 
 Optional deploy env overrides (`libs/contracts/.env` or `.env.local`):
+
 - `WORK_TOKEN_CREATE_HBAR_TO_SEND`
-- `GOVERNANCE_NFT_CREATE_HBAR_TO_SEND`
+- `POSITION_NFT_CREATE_HBAR_TO_SEND`
 - `DEPLOY_GAS_LIMIT`
-- `GOVERNANCE_NFT_MAX_SUPPLY`
+- `POSITION_NFT_MAX_SUPPLY`
+- `POSITION_NFT_NAME`
+- `POSITION_NFT_SYMBOL`
+- `POSITION_NFT_MEMO`
 - `GTOKEN_EPOCH_LENGTH_SECONDS`
-- `CREATE_GOVERNANCE_NFT`
-- `WORK_REWARDS_ADDRESS` (reuse existing rewards)
-- `WORK_STAKING_ADDRESS` (override collector)
+- `CREATE_POSITION_NFT`
+- `POSITION_NFT_ASSOCIATE_ACCOUNTS`
+- `WORK_REWARDS_ADDRESS`
+- `WORK_STAKING_ADDRESS`
 
 ## Open a console on Hedera
 

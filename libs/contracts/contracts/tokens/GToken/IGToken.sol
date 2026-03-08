@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "../../libraries/Epochs.sol";
+import {Epochs} from "../../libraries/Epochs.sol";
+import {ISFT} from "../../abstracts/ISFT.sol";
 
-interface IGToken {
+interface IGToken is ISFT {
 	struct LiquidityInfo {
 		address token0;
 		address token1;
@@ -29,7 +30,7 @@ interface IGToken {
 		Attributes attributes;
 	}
 
-	/// @notice Emitted when a GToken is transferred, minted, or burned
+	/// @notice Emitted when a GToken position is transferred, minted, or burned.
 	event GTokenTransfer(
 		address indexed from,
 		address indexed to,
@@ -38,35 +39,7 @@ interface IGToken {
 		uint256 supply
 	);
 
-	event GovernanceNftCreated(
-		address indexed token,
-		uint256 maxSupply,
-		uint256 timestamp
-	);
-	event GovernanceNftAssociated(
-		address indexed account,
-		address indexed token,
-		uint256 timestamp
-	);
-	event GovernanceNftMinted(
-		address indexed to,
-		int64 indexed serialNumber,
-		uint256 timestamp
-	);
-	event GovernanceNftTransferred(
-		address indexed from,
-		address indexed to,
-		int64 indexed serialNumber,
-		uint256 timestamp
-	);
-	event GovernanceNftBurned(int64 indexed serialNumber, uint256 timestamp);
-
-	/// @notice Mint a new GToken
-	/// @param to Recipient address
-	/// @param rewardPerShare Reward per share
-	/// @param epochsLocked Number of epochs locked
-	/// @param lpDetails Liquidity info
-	/// @return nonce Token ID of minted GToken
+	/// @notice Mint a new GToken.
 	function mintGToken(
 		address to,
 		uint256 rewardPerShare,
@@ -74,87 +47,39 @@ interface IGToken {
 		LiquidityInfo memory lpDetails
 	) external returns (uint256);
 
-	/// @notice Burn an existing GToken held by caller
-	/// @param nonce Token ID
+	/// @notice Burn an existing GToken held by caller.
 	function burn(uint256 nonce) external;
 
-	/// @notice Update attributes of a GToken
-	/// @param user Token owner
-	/// @param nonce Token ID
-	/// @param attr New attributes
-	/// @return nonce Token ID updated
+	/// @notice Update attributes of a GToken.
 	function update(
 		address user,
 		uint256 nonce,
 		Attributes memory attr
 	) external returns (uint256);
 
-	/// @notice Get a single GToken balance at a specific nonce
-	/// @param user Owner address
-	/// @param nonce Token ID
-	/// @return Balance struct
+	/// @notice Get a single GToken balance at a specific nonce.
 	function getBalanceAt(
 		address user,
 		uint256 nonce
 	) external view returns (Balance memory);
 
-	/// @notice Get all GToken balances for a user
-	/// @param user Owner address
-	/// @return Array of Balance structs
+	/// @notice Get all GToken balances for a user.
 	function getBalance(address user) external view returns (Balance[] memory);
 
-	/// @notice Get the attributes of a GToken by nonce
-	/// @param nonce Token ID
-	/// @return Attributes struct
+	/// @notice Get the attributes of a GToken by nonce.
 	function getAttributes(
 		uint256 nonce
 	) external view returns (Attributes memory);
 
-	/// @notice Get the epoch storage
-	/// @return Epochs.Storage struct
+	/// @notice Get the epoch storage.
 	function epochs() external view returns (Epochs.Storage memory);
 
-	/// @notice Total stake weight across all tokens
-	/// @return uint256 total stake weight
+	/// @notice Total stake weight across all tokens.
 	function totalStakeWeight() external view returns (uint256);
 
-	/// @notice Total supply for a specific liquidity pair
-	/// @param pair LP pair address
-	/// @return uint256 total supply
+	/// @notice Total supply for a specific liquidity pair.
 	function pairSupply(address pair) external view returns (uint256);
 
-	/// @notice Total supply of all GTokens
-	/// @return uint256 total supply
+	/// @notice Total supply of all GTokens.
 	function totalSupply() external view returns (uint256);
-
-	/// @notice Creates a WorkIt governance HTS NFT token controlled by this contract.
-	function createGovernanceNft(uint256 maxSupply)
-		external
-		payable
-		returns (address tokenAddress);
-
-	/// @notice Associates an account to receive governance NFTs.
-	function associateGovernanceNft(address account) external;
-
-	/// @notice Mints governance NFTs to a recipient, one serial per metadata entry.
-	function mintGovernanceNft(
-		address to,
-		bytes[] calldata metadata
-	) external returns (int64[] memory serialNumbers);
-
-	/// @notice Transfers a governance NFT serial.
-	function transferGovernanceNft(
-		address from,
-		address to,
-		int64 serialNumber
-	) external;
-
-	/// @notice Burns governance NFT serials from treasury balance.
-	function burnGovernanceNfts(int64[] calldata serialNumbers) external;
-
-	/// @notice Returns the HTS token address for governance NFTs.
-	function governanceNftToken() external view returns (address);
-
-	/// @notice Returns total minted governance NFT supply.
-	function governanceNftSupply() external view returns (uint256);
 }
