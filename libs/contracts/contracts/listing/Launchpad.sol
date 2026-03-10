@@ -21,6 +21,7 @@ import {GTokenLib} from "../tokens/GToken/GTokenLib.sol";
 import {Epochs} from "../libraries/Epochs.sol";
 import {IERC1155} from "@openzeppelin/contracts/interfaces/IERC1155.sol";
 import {ISFT} from "../abstracts/ISFT.sol";
+import {FullMath} from "../libraries/FullMath.sol";
 
 contract Launchpad is
 	Initializable,
@@ -43,7 +44,6 @@ contract Launchpad is
 	uint256 public constant MIN_LOCK_EPOCHS = 90;
 
 	uint256 public constant SECURITY_GTOKEN_AMOUNT = 500 ether;
-	uint256 public constant TARGET_GOAL_DEDU_VALUE = 2 * SECURITY_GTOKEN_AMOUNT;
 	uint256 public constant SECURITY_GTOKEN_MIN_EPOCHS_TO_EXPIRE = 90; // 90 epochs
 	string private constant LAUNCHPAD_NAME = "GainzSwap Launchpad";
 	string private constant LAUNCHPAD_SYMBOL = "GLP";
@@ -58,8 +58,8 @@ contract Launchpad is
 		address factory;
 		address gToken;
 		address staking;
-		mapping(address => address[]) fundingTokenToDEDU;
-		EnumerableSet.AddressSet allowedFundingTokens;
+		mapping(address => address[]) deprecatedFundingTokenPathToWRK;
+		EnumerableSet.AddressSet deprecatedAllowedFundingTokens;
 		mapping(address => address) campaignPair;
 		mapping(address => uint256[]) securityNonces; // campaign => gToken nonces
 		mapping(address => EnumerableSet.UintSet) userCampaignIds;
@@ -67,6 +67,7 @@ contract Launchpad is
 		//
 
 		address campaignMigrator; // KEPT LAST SO THAT WE MIGHT REMOVE IT LATER
+		mapping(address => bool) campaignRequiresSecurity;
 	}
 
 	// keccak256("workit.contracts.listing.Launchpad") & ~bytes32(uint256(0xff))
@@ -250,7 +251,6 @@ contract Launchpad is
 		IStaking($.staking).stakeLiquidityIn(
 			pair,
 			liquidity,
-			$.fundingTokenToDEDU[listing.fundingToken],
 			address(campaign),
 			listing.lockEpochs
 		);
@@ -279,31 +279,7 @@ contract Launchpad is
 			revert ZeroCampaignToken(listing.campaignToken);
 		if (campaignTokenSupply == 0)
 			revert ZeroCampaignTokenSupply(campaignTokenSupply);
-		if (!$.allowedFundingTokens.contains(listing.fundingToken))
-			revert FundingTokenNotAllowed(listing.fundingToken);
 		_requireListingContainsWorkToken(listing);
-
-		// --- Funding goal check in DEDU ---
-		address[] memory fundingPathToDEDU = $.fundingTokenToDEDU[
-			listing.fundingToken
-		];
-		if (fundingPathToDEDU.length == 0)
-			revert NoFundingPathToDEDU(listing.fundingToken);
-
-		uint256 goalDEDUValue;
-		if (fundingPathToDEDU.length == 1) {
-			goalDEDUValue = listing.goal;
-		} else {
-			uint256[] memory amountsOut = UniswapV2Library.getAmountsOut(
-				$.factory,
-				listing.goal,
-				fundingPathToDEDU
-			);
-
-			goalDEDUValue = amountsOut[amountsOut.length - 1];
-		}
-		if (goalDEDUValue < TARGET_GOAL_DEDU_VALUE)
-			revert InsufficientGoalDEDU(goalDEDUValue, TARGET_GOAL_DEDU_VALUE);
 
 		// --- Deadline & duration checks ---
 		if (listing.deadline <= block.timestamp)
@@ -367,7 +343,7 @@ contract Launchpad is
 		balances = _getGTokenBalances(gToken, nonces, msg.sender);
 
 		values = new uint256[](balances.length);
-		uint256 totalAmount;
+		uint256 totalWRKAmount;
 		for (uint256 i; i < nonces.length; ++i) {
 			IGToken.Balance memory balance = balances[i];
 			if (balance.amount == 0) revert ZeroGTokenBalance(nonces[i]);
@@ -386,11 +362,17 @@ contract Launchpad is
 				revert GTokenNotSecurityDeposit(nonces[i], workToken_);
 
 			values[i] = balance.amount;
-			totalAmount += balance.amount;
+			uint256 nonceValue = gToken.positionValueOf(balance.nonce);
+			if (nonceValue == 0) revert ZeroGTokenBalance(nonces[i]);
+			totalWRKAmount += FullMath.mulDiv(
+				balance.amount,
+				balance.attributes.lpDetails.liqValue,
+				nonceValue
+			);
 		}
 
-		if (totalAmount < SECURITY_GTOKEN_AMOUNT)
-			revert NotEnoughGTokenAmount(totalAmount, SECURITY_GTOKEN_AMOUNT);
+		if (totalWRKAmount < SECURITY_GTOKEN_AMOUNT)
+			revert NotEnoughGTokenAmount(totalWRKAmount, SECURITY_GTOKEN_AMOUNT);
 	}
 
 	function createCampaign(
@@ -399,17 +381,25 @@ contract Launchpad is
 		uint256 campaignTokenSupply
 	) external {
 		LaunchpadStorage storage $ = _launchpadStorage();
+		bool isFirstCampaign = _getCampaignFactoryStorage().campaigns.length() == 0;
+		bool shouldProcessSecurity = !isFirstCampaign;
 
 		_validateListing(listing, campaignTokenSupply);
-		(, uint256[] memory values) = _validateSecurityPayment(
-			securityNonces,
-			IGToken($.gToken),
-			IStaking($.staking).workToken(),
-			IGToken($.gToken).epochs().currentEpoch()
-		);
+		uint256[] memory values;
+		if (shouldProcessSecurity) {
+			(, values) = _validateSecurityPayment(
+				securityNonces,
+				IGToken($.gToken),
+				IStaking($.staking).workToken(),
+				IGToken($.gToken).epochs().currentEpoch()
+			);
+		}
 
 		(address campaign, ) = _createCampaign(msg.sender, $.gToken, listing);
-		_receiveSecurityGToken($, campaign, securityNonces, values);
+		$.campaignRequiresSecurity[campaign] = shouldProcessSecurity;
+		if (shouldProcessSecurity) {
+			_receiveSecurityGToken($, campaign, securityNonces, values);
+		}
 
 		IERC20(listing.campaignToken).transferFrom(
 			msg.sender,
@@ -423,61 +413,6 @@ contract Launchpad is
 			campaign,
 			abi.encodeWithSignature("transferOwnership(address)", msg.sender)
 		);
-	}
-
-	function setTokenPathToDEDU(address[] calldata path) external onlyOwner {
-		LaunchpadStorage storage $ = _launchpadStorage();
-
-		if (path.length == 0) revert EmptyPath();
-
-		address dedu = IStaking($.staking).dEDU();
-
-		// Case 1: already DEDU, no swap needed
-		if (path.length == 1) {
-			if (path[0] != dedu) revert SinglePathMustBeDEDU(path[0], dedu);
-		} else {
-			// Case 2: multi-hop path ending in DEDU
-			address outputToken = path[path.length - 1];
-			if (outputToken != dedu)
-				revert InvalidOutputToken(outputToken, dedu);
-
-			address _factory = $.factory;
-
-			for (uint256 i; i < path.length - 1; ++i) {
-				address pair = IUniswapV2Factory(_factory).getPair(
-					path[i],
-					path[i + 1]
-				);
-				if (pair == address(0))
-					revert PairDoesNotExist(path[i], path[i + 1]);
-			}
-		}
-
-		address inputToken = path[0];
-
-		// Below is not required since we can update a token's pathToDEDU
-		// require(
-		// 	!$.allowedFundingTokens.contains(inputToken),
-		// 	"TokenAlreadyAllowed"
-		// );
-
-		$.allowedFundingTokens.add(inputToken);
-		$.fundingTokenToDEDU[inputToken] = path;
-	}
-
-	function removeAllowedFundingToken(address token) external onlyOwner {
-		if (token == address(0)) revert ZeroToken(token);
-
-		LaunchpadStorage storage $ = _launchpadStorage();
-
-		if (!$.allowedFundingTokens.contains(token))
-			revert TokenNotAllowed(token);
-
-		// Remove from allowed set
-		$.allowedFundingTokens.remove(token);
-
-		// Delete swap path to DEDU
-		delete $.fundingTokenToDEDU[token];
 	}
 
 	/*//////////////////////////////////////////////////////////////
@@ -527,12 +462,17 @@ contract Launchpad is
 
 	function returnSecurityGTokens(address to) external onlyCampaigns {
 		LaunchpadStorage storage $ = _launchpadStorage();
+		bool requiresSecurity = $.campaignRequiresSecurity[msg.sender];
+		delete $.campaignRequiresSecurity[msg.sender];
 
 		uint256[] memory ids = $.securityNonces[msg.sender];
 		delete $.securityNonces[msg.sender];
 
 		uint256 len = ids.length;
-		if (len == 0) revert NoSecurityGTokens(msg.sender);
+		if (len == 0) {
+			if (requiresSecurity) revert NoSecurityGTokens(msg.sender);
+			return;
+		}
 
 		uint256[] memory values = new uint256[](len);
 		for (uint256 i; i < len; ++i) {
@@ -552,18 +492,6 @@ contract Launchpad is
 	                          VIEWS
 	//////////////////////////////////////////////////////////////*/
 
-	function allowedFundingTokens() public view returns (address[] memory) {
-		return _launchpadStorage().allowedFundingTokens.values();
-	}
-
-	function dEDU() public view returns (address) {
-		return IStaking(_launchpadStorage().staking).dEDU();
-	}
-
-	function WEDU() public view returns (address) {
-		return IStaking(_launchpadStorage().staking).WEDU();
-	}
-
 	function workToken() public view returns (address) {
 		return IStaking(_launchpadStorage().staking).workToken();
 	}
@@ -576,6 +504,12 @@ contract Launchpad is
 		address campaign
 	) external view override returns (address) {
 		return _launchpadStorage().campaignPair[campaign];
+	}
+
+	function campaignRequiresSecurity(
+		address campaign
+	) external view override returns (bool) {
+		return _launchpadStorage().campaignRequiresSecurity[campaign];
 	}
 
 	function userCampaignIds(

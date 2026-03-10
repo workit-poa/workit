@@ -3,8 +3,6 @@ pragma solidity ^0.8.28;
 
 interface IUniswapV2Router {
 	function factory() external view returns (address);
-	function WEDU() external view returns (address);
-	function dEDU() external view returns (address);
 
 	function addLiquidity(
 		address tokenA,
@@ -56,24 +54,10 @@ interface IUniswapV2Router {
 		address to,
 		uint256 deadline
 	) external payable returns (uint256[] memory amounts);
-	function swapExactWEDUForTokens(
-		uint256 amountIn,
-		uint256 amountOutMin,
-		address[] calldata path,
-		address to,
-		uint256 deadline
-	) external returns (uint256[] memory amounts);
 	function swapETHForExactTokens(
 		uint256 amountOut,
 		address[] calldata path,
 		address to,
 		uint256 deadline
 	) external payable returns (uint256[] memory amounts);
-	function swapWEDUForExactTokens(
-		uint256 amountOut,
-		uint256 amountInMax,
-		address[] calldata path,
-		address to,
-		uint256 deadline
-	) external returns (uint256[] memory amounts);
 }

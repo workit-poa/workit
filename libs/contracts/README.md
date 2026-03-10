@@ -94,6 +94,12 @@ Deploy flow:
 6. Deploy/init `Rewards` (or reuse `WORK_REWARDS_ADDRESS`).
 7. Grant `GToken.UPDATE_ROLE` to `Rewards`.
 8. Set controller staking collector (`WORK_STAKING_ADDRESS` or rewards address).
+9. Deploy `Staking`.
+10. Grant `GToken.MINTER_ROLE` to `Staking`.
+11. Deploy `Campaign` beacon.
+12. Deploy/init `Launchpad`.
+13. Prepare token approvals.
+14. Create WRK/USDC campaign.
 
 Optional deploy env overrides (`libs/contracts/.env` or `.env.local`):
 
@@ -109,6 +115,20 @@ Optional deploy env overrides (`libs/contracts/.env` or `.env.local`):
 - `POSITION_NFT_ASSOCIATE_ACCOUNTS`
 - `WORK_REWARDS_ADDRESS`
 - `WORK_STAKING_ADDRESS`
+- `LAUNCHPAD_URI`
+
+Launchpad orchestration notes:
+
+- Deploy script hardcodes Hedera testnet defaults:
+  - Router: `0.0.19264` (`0x0000000000000000000000000000000000004b40`)
+  - Funding token (USDC): `0.0.429274` (`0x0000000000000000000000000000000000068cda`)
+  - Campaign token mode: `ethers.ZeroAddress` sentinel meaning "use deployed WRK"
+  - Security nonces: `[]` (first campaign skips security GTokens)
+  - Campaign supply: `WRK_ICO_FUNDS`
+  - Campaign goal: `1_000 * 10^6` (1000 USDC)
+  - Lock: `180` epochs
+  - Deadline: `45` days
+- `createWorkToken` now transfers ICO WRK supply directly to the owner during creation.
 
 ## Open a console on Hedera
 

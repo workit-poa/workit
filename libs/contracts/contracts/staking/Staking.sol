@@ -194,7 +194,6 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		uint256 amountBDesired,
 		uint256 amountAMin,
 		uint256 amountBMin,
-		address[] calldata,
 		address to,
 		uint256 epochsLocked
 	) external override {
@@ -216,7 +215,6 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 	function stakeLiquidityIn(
 		address pair,
 		uint256 liquidity,
-		address[] calldata,
 		address to,
 		uint256 epochsLocked
 	) external override {
@@ -312,7 +310,6 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		uint256 tokenATotalAmount,
 		uint256 tokenAMin,
 		uint256 tokenBMin,
-		address[] calldata,
 		address to,
 		uint256 epochsLocked
 	) external override {
@@ -610,14 +607,6 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 	/*//////////////////////////////////////////////////////////////
 	                               VIEWS
 	//////////////////////////////////////////////////////////////*/
-
-	function dEDU() public view override returns (address) {
-		return IUniswapV2Router(_stakingStorage().router).dEDU();
-	}
-
-	function WEDU() public view override returns (address) {
-		return IUniswapV2Router(_stakingStorage().router).WEDU();
-	}
 
 	function rewards() public view override returns (address) {
 		return _stakingStorage().rewards;

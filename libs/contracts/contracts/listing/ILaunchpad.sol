@@ -12,9 +12,6 @@ interface ILaunchpad {
 	error ZeroMigrator(address migrator);
 	error ZeroCampaignToken(address token);
 	error ZeroCampaignTokenSupply(uint256 supply);
-	error FundingTokenNotAllowed(address token);
-	error NoFundingPathToDEDU(address token);
-	error InsufficientGoalDEDU(uint256 goalDEDUValue, uint256 required);
 	error InvalidDeadline(uint256 deadline, uint256 currentTime);
 	error InvalidDuration(
 		uint256 duration,
@@ -46,13 +43,6 @@ interface ILaunchpad {
 	);
 	error GTokenNotSecurityDeposit(uint256 nonce, address requiredToken);
 	error NotEnoughGTokenAmount(uint256 totalAmount, uint256 requiredAmount);
-	error ZeroFundingToken(address token);
-	error EmptyPath();
-	error SinglePathMustBeDEDU(address providedToken, address deduToken);
-	error InvalidOutputToken(address outputToken, address deduToken);
-	error PairDoesNotExist(address tokenA, address tokenB);
-	error ZeroToken(address token);
-	error TokenNotAllowed(address token);
 	error NoSecurityGTokens(address campaign);
 
 	function mint(address to, uint256 amount) external;
@@ -73,9 +63,7 @@ interface ILaunchpad {
 
 	function returnSecurityGTokens(address to) external;
 
-	function dEDU() external view returns (address);
-
-	function WEDU() external view returns (address);
+	function campaignRequiresSecurity(address campaign) external view returns (bool);
 
 	function workToken() external view returns (address);
 

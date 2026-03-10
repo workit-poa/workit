@@ -26,6 +26,7 @@
     "contracts:ping:local": "pnpm --filter @workit-poa/contracts ping:local",
     "contracts:test:local": "pnpm --filter @workit-poa/contracts test:local",
     "contracts:deploy:local": "pnpm --filter @workit-poa/contracts deploy:local",
+    "contracts:deploy:testnet": "pnpm --filter @workit-poa/contracts deploy:testnet",
     "hedera:hcs:local": "pnpm --filter @workit-poa/contracts hcs:local",
     "hedera:hts:local": "pnpm --filter @workit-poa/contracts hts:local",
     "drizzle:generate": "drizzle-kit generate",

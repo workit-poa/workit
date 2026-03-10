@@ -74,7 +74,6 @@ interface IStaking {
 		uint256 amountBDesired,
 		uint256 amountAMin,
 		uint256 amountBMin,
-		address[] calldata pathToDEDU,
 		address to,
 		uint256 epochsLocked
 	) external;
@@ -83,7 +82,6 @@ interface IStaking {
 	function stakeLiquidityIn(
 		address pair,
 		uint256 liquidity,
-		address[] calldata pathToDEDU,
 		address to,
 		uint256 epochsLocked
 	) external;
@@ -99,7 +97,6 @@ interface IStaking {
 		uint256 tokenATotalAmount,
 		uint256 tokenAMin,
 		uint256 tokenBMin,
-		address[] calldata pathToDEDU,
 		address to,
 		uint256 epochsLocked
 	) external;
@@ -139,8 +136,4 @@ interface IStaking {
 	function workToken() external view returns (address);
 
 	function gToken() external view returns (address);
-
-	function dEDU() external view returns (address);
-
-	function WEDU() external view returns (address);
 }

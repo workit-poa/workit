@@ -133,7 +133,10 @@ contract WorkEmissionController is
 			revert WorkTokenAlreadyCreated();
 		}
 
-		return _createWorkToken(msg.value);
+		address tokenAddress = _createWorkToken(msg.value);
+		_transferWRK(address(this), owner(), WorkInfo.ICO_FUNDS);
+
+		return tokenAddress;
 	}
 
 	function setStakingRewardsCollector(address _rewards) public onlyOwner {

@@ -19,10 +19,6 @@ import {FullMath} from "../libraries/FullMath.sol";
 import {UniswapV2Library} from "../libraries/UniswapV2Library.sol";
 import {CampaignLib} from "./CampaignLib.sol";
 
-interface IWEDU {
-	function deposit() external payable;
-}
-
 /// @notice Campaign contract for liquidity / pair launch funding
 contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	using GTokenLib for IGToken.Attributes;
@@ -121,15 +117,6 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		emit ContributionMade(user, amount);
 	}
 
-	function _checkDEDUFunding(
-		address dedu,
-		address fundingToken
-	) internal pure returns (address) {
-		if (dedu != fundingToken)
-			revert InvalidFundingToken(fundingToken, dedu);
-		return dedu;
-	}
-
 	function contribute(
 		uint256 amount,
 		address to
@@ -142,37 +129,6 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 			amount
 		);
 
-		_contribute(amount, to, $.launchpad);
-	}
-
-	function contribute(
-		address to
-	) external payable notExpired inStatus(Status.Funding) {
-		CampaignStorage storage $ = _campaignStorage();
-		address dedu = _checkDEDUFunding(
-			ILaunchpad($.launchpad).dEDU(),
-			$.listing.fundingToken
-		);
-		address wedu = ILaunchpad($.launchpad).WEDU();
-		if (dedu != wedu) revert InvalidFundingToken(wedu, dedu);
-
-		IWEDU(wedu).deposit{value: msg.value}();
-		_contribute(msg.value, to, $.launchpad);
-	}
-
-	function contributeWEDU(
-		uint256 amount,
-		address to
-	) external notExpired inStatus(Status.Funding) {
-		CampaignStorage storage $ = _campaignStorage();
-		address dedu = _checkDEDUFunding(
-			ILaunchpad($.launchpad).dEDU(),
-			$.listing.fundingToken
-		);
-		address wedu = ILaunchpad($.launchpad).WEDU();
-		if (dedu != wedu) revert InvalidFundingToken(wedu, dedu);
-
-		IERC20(wedu).transferFrom(msg.sender, address(this), amount);
 		_contribute(amount, to, $.launchpad);
 	}
 
@@ -315,7 +271,10 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 				.getSecurityGTokens(address(this))
 				.length;
 			uint256 campaignTokens = campaignSupply();
-			if (securityCount == 0 || campaignTokens == 0)
+			bool hasRequiredSecurity =
+				securityCount > 0 ||
+				!ILaunchpad($.launchpad).campaignRequiresSecurity(address(this));
+			if (!hasRequiredSecurity || campaignTokens == 0)
 				revert MissingCampaignTokens(securityCount, campaignTokens);
 			$.status = Status.Funding;
 			return $.status;

@@ -33,7 +33,6 @@ interface ICampaign {
 	error CampaignExpired(uint256 deadline, uint256 currentTime);
 	error InvalidStatus(Status expected, Status actual);
 	error ZeroContribution(uint256 amount);
-	error InvalidFundingToken(address provided, address dedu);
 	error CampaignNotEnded(uint256 deadline, uint256 currentTime);
 	error CampaignNotSuccess(Status status);
 	error ContributionsDrained(uint256 contributionBalance);
@@ -76,12 +75,6 @@ interface ICampaign {
 
 	/// @notice ERC20 contribution
 	function contribute(uint256 amount, address to) external;
-
-	/// @notice Native EDU contribution (dEDU campaigns only)
-	function contribute(address to) external payable;
-
-	/// @notice WEDU contribution (dEDU campaigns only)
-	function contributeWEDU(uint256 amount, address to) external;
 
 	/*//////////////////////////////////////////////////////////////
 	                      CAMPAIGN ACTIONS
