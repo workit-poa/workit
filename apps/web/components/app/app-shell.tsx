@@ -95,7 +95,7 @@ export function AppShell() {
         </motion.div>
       </section>
 
-      <section id="launchpad" className="mx-auto mt-8 w-full max-w-4xl scroll-mt-24">
+      <section className="mx-auto mt-6 w-full max-w-4xl">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.18 }}>
           <LaunchpadPanel />
         </motion.div>

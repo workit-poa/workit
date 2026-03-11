@@ -34,30 +34,6 @@ export interface ManagedWalletSignerContext {
   kmsKeyId: string;
 }
 
-export interface UsdcFaucetEligibility {
-  eligible: boolean;
-  retryAfterSeconds: number;
-  nextEligibleAt: Date | null;
-}
-
-export interface UsdcFaucetClaimReservation {
-  userId: string;
-  previousClaimedAt: Date | null;
-  reservedAt: Date;
-}
-
-export type UsdcFaucetClaimReservationResult =
-  | {
-      ok: true;
-      reservation: UsdcFaucetClaimReservation;
-      nextEligibleAt: Date;
-    }
-  | {
-      ok: false;
-      retryAfterSeconds: number;
-      nextEligibleAt: Date;
-    };
-
 function toAuthUser(user: UserRow): AuthUser {
   return {
     id: user.id,
