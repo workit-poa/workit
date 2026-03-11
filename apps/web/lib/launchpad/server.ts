@@ -1,5 +1,5 @@
 import { getManagedWalletSignerContext } from "@workit-poa/auth";
-import { AccountId, EthereumTransaction } from "@hashgraph/sdk";
+import { AccountId, EthereumTransaction, TokenId } from "@hashgraph/sdk";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
@@ -77,6 +77,7 @@ interface SponsoredExecutionParams {
   data: string;
   gasLimit: bigint;
   value?: bigint;
+  decodeInterfaces?: Interface[];
 }
 
 interface DeploymentContractFile {
@@ -89,6 +90,23 @@ interface ResolvedDeploymentContracts {
   launchpadAbi: InterfaceAbi;
   campaignAbi: InterfaceAbi;
   campaignInterface: Interface;
+}
+
+interface MirrorTokenResponse {
+  symbol?: unknown;
+  decimals?: unknown;
+}
+
+interface MirrorTokenBalancesResponse {
+  balances?: Array<{ balance?: unknown; account?: unknown }>;
+}
+
+interface MirrorAccountAllowancesResponse {
+  allowances?: Array<{ amount?: unknown; spender?: unknown; token_id?: unknown }>;
+}
+
+interface MirrorAccountResponse {
+  account?: unknown;
 }
 
 function accountIdToSolidityAddress(accountId: string): string {
@@ -181,11 +199,17 @@ function resolveMaxGasAllowanceHbar(): string {
 
 function resolveWhbarAddress(): string {
   const configured = process.env.LAUNCHPAD_WHBAR_ADDRESS?.trim();
-  const address = configured && configured.length > 0 ? configured : TESTNET_WHBAR_ADDRESS;
-  if (!isAddress(address)) {
-    throw new Error("LAUNCHPAD_WHBAR_ADDRESS must be a valid EVM address");
+  const candidate = configured && configured.length > 0 ? configured : TESTNET_WHBAR_ADDRESS;
+  if (isAddress(candidate)) {
+    return getAddress(candidate);
   }
-  return getAddress(address);
+
+  try {
+    const solidityHex = TokenId.fromString(candidate).toSolidityAddress();
+    return getAddress(`0x${solidityHex}`);
+  } catch {
+    throw new Error("LAUNCHPAD_WHBAR_ADDRESS must be a valid EVM address or Hedera token ID");
+  }
 }
 
 function isWhbarToken(tokenAddress: string): boolean {
@@ -232,7 +256,11 @@ function normalizeListing(raw: unknown): CampaignListing {
   };
 }
 
-function normalizeStatus(rawStatus: bigint | number): CampaignStatusCode {
+function normalizeStatus(rawStatus: unknown): CampaignStatusCode {
+  if (typeof rawStatus !== "bigint" && typeof rawStatus !== "number") {
+    throw new Error("Unexpected campaign status payload");
+  }
+
   const status = Number(rawStatus);
   if (status !== 0 && status !== 1 && status !== 2 && status !== 3) {
     throw new Error(`Unexpected campaign status value: ${status}`);
@@ -244,7 +272,6 @@ async function readCampaignSuppliesWithFallback(params: {
   campaign: Contract;
   campaignAddress: string;
   listing: CampaignListing;
-  provider: JsonRpcProvider;
 }): Promise<{ fundingSupplyRaw: bigint; campaignSupplyRaw: bigint }> {
   try {
     const [fundingSupplyRaw, campaignSupplyRaw] = await Promise.all([
@@ -257,27 +284,31 @@ async function readCampaignSuppliesWithFallback(params: {
     };
   } catch {
     const [fundingToken, campaignToken] = await Promise.all([
-      new Contract(params.listing.fundingToken, ERC20_ABI, params.provider).balanceOf(params.campaignAddress),
-      new Contract(params.listing.campaignToken, ERC20_ABI, params.provider).balanceOf(params.campaignAddress)
+      getTokenBalanceFromHts(params.listing.fundingToken, { accountAddress: params.campaignAddress }),
+      getTokenBalanceFromHts(params.listing.campaignToken, { accountAddress: params.campaignAddress })
     ]);
+
+    if (fundingToken === null || campaignToken === null) {
+      throw new Error(`Failed to read fallback token balances from HTS for campaign ${params.campaignAddress}`);
+    }
+
     return {
-      fundingSupplyRaw: BigInt(fundingToken),
-      campaignSupplyRaw: BigInt(campaignToken)
+      fundingSupplyRaw: fundingToken,
+      campaignSupplyRaw: campaignToken
     };
   }
 }
 
-async function getTokenMetadata(provider: JsonRpcProvider, tokenAddress: string): Promise<TokenMetadata> {
-  const token = new Contract(tokenAddress, ERC20_ABI, provider);
-
-  const [symbol, decimalsRaw] = await Promise.all([
-    token.symbol().catch(() => "TOKEN"),
-    token.decimals().catch(() => 18)
-  ]);
-
-  const decimals = Number(decimalsRaw);
+async function getTokenMetadata(_: JsonRpcProvider, tokenAddress: string): Promise<TokenMetadata> {
   const normalizedAddress = getAddress(tokenAddress);
-  if (isWhbarToken(normalizedAddress)) {
+  const isWhbar = isWhbarToken(normalizedAddress);
+  const metadataFromHts = await getTokenMetadataFromHts(normalizedAddress);
+
+  if (metadataFromHts) {
+    return metadataFromHts;
+  }
+
+  if (isWhbar) {
     return {
       address: normalizedAddress,
       symbol: "HBAR",
@@ -287,12 +318,228 @@ async function getTokenMetadata(provider: JsonRpcProvider, tokenAddress: string)
 
   return {
     address: normalizedAddress,
-    symbol: typeof symbol === "string" && symbol.trim().length > 0 ? symbol : "TOKEN",
-    decimals: Number.isInteger(decimals) && decimals >= 0 ? decimals : 18
+    symbol: "TOKEN",
+    decimals: 18
   };
 }
 
+function resolveMirrorNodeBaseUrl(): string | null {
+  const configured =
+    process.env.HEDERA_MIRROR_NODE_URL?.trim() || process.env.HEDERA_MIRROR_REST_URL?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+
+  const network = parseHederaEvmNetwork(process.env.HEDERA_NETWORK);
+  if (network === "mainnet") return "https://mainnet-public.mirrornode.hedera.com";
+  if (network === "testnet") return "https://testnet.mirrornode.hedera.com";
+  if (network === "previewnet") return "https://previewnet.mirrornode.hedera.com";
+  return null;
+}
+
+function parseMirrorAmount(value: unknown): bigint | null {
+  if (typeof value === "string" && /^-?\d+$/.test(value)) {
+    return BigInt(value);
+  }
+  if (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value)) {
+    return BigInt(value);
+  }
+  return null;
+}
+
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+  const numeric = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isInteger(numeric) && numeric >= 0 ? numeric : fallback;
+}
+
+function solidityAddressToEntityId(evmAddress: string): string | null {
+  const normalizedAddress = getAddress(evmAddress);
+
+  try {
+    return AccountId.fromSolidityAddress(normalizedAddress).toString();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMirrorJson<T>(path: string): Promise<T | null> {
+  const mirrorBaseUrl = resolveMirrorNodeBaseUrl();
+  if (!mirrorBaseUrl) return null;
+
+  try {
+    const response = await fetch(`${mirrorBaseUrl}${path}`, {
+      headers: {
+        accept: "application/json"
+      }
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveAccountIdFromAddress(address: string): Promise<string | null> {
+  const normalizedAddress = getAddress(address);
+  const entityId = solidityAddressToEntityId(normalizedAddress);
+  if (entityId) return entityId;
+
+  const payload = await fetchMirrorJson<MirrorAccountResponse>(`/api/v1/accounts/${normalizedAddress}`);
+  if (!payload || typeof payload.account !== "string" || payload.account.trim().length === 0) {
+    return null;
+  }
+  return payload.account;
+}
+
+async function resolveTokenIdFromAddress(tokenAddress: string): Promise<string | null> {
+  try {
+    return TokenId.fromSolidityAddress(getAddress(tokenAddress)).toString();
+  } catch {
+    return null;
+  }
+}
+
+async function getTokenMetadataFromHts(tokenAddress: string): Promise<TokenMetadata | null> {
+  const tokenId = await resolveTokenIdFromAddress(tokenAddress);
+  if (!tokenId) return null;
+
+  const payload = await fetchMirrorJson<MirrorTokenResponse>(`/api/v1/tokens/${tokenId}`);
+  if (!payload) return null;
+
+  const symbol = typeof payload.symbol === "string" && payload.symbol.trim().length > 0 ? payload.symbol : "TOKEN";
+  const decimals = parseNonNegativeInteger(payload.decimals, 18);
+
+  return {
+    address: getAddress(tokenAddress),
+    symbol: symbol.toUpperCase() === "WHBAR" ? "HBAR" : symbol,
+    decimals
+  };
+}
+
+async function getTokenBalanceFromHts(
+  tokenAddress: string,
+  owner: { accountId?: string; accountAddress?: string }
+): Promise<bigint | null> {
+  const tokenId = await resolveTokenIdFromAddress(tokenAddress);
+  if (!tokenId) return null;
+
+  const accountId =
+    owner.accountId?.trim() ||
+    (owner.accountAddress ? await resolveAccountIdFromAddress(owner.accountAddress) : null);
+  if (!accountId) return null;
+
+  const payload = await fetchMirrorJson<MirrorTokenBalancesResponse>(
+    `/api/v1/tokens/${tokenId}/balances?account.id=${encodeURIComponent(accountId)}`
+  );
+  if (!payload || !Array.isArray(payload.balances) || payload.balances.length === 0) {
+    return null;
+  }
+
+  return parseMirrorAmount(payload.balances[0]?.balance);
+}
+
+async function getTokenAllowanceFromHts(params: {
+  tokenAddress: string;
+  ownerAccountId: string;
+  spenderAddress: string;
+}): Promise<bigint | null> {
+  const ownerAccountId = params.ownerAccountId.trim();
+  if (!ownerAccountId) return null;
+
+  const tokenId = await resolveTokenIdFromAddress(params.tokenAddress);
+  if (!tokenId) return null;
+
+  const spenderId = await resolveAccountIdFromAddress(params.spenderAddress);
+  if (!spenderId) return null;
+
+  const query = `/api/v1/accounts/${encodeURIComponent(ownerAccountId)}/allowances/tokens?token.id=${encodeURIComponent(
+    tokenId
+  )}&spender.id=${encodeURIComponent(spenderId)}&limit=100`;
+  const payload = await fetchMirrorJson<MirrorAccountAllowancesResponse>(query);
+  if (!payload || !Array.isArray(payload.allowances)) {
+    return null;
+  }
+
+  const match = payload.allowances.find(allowance => {
+    const tokenMatch = typeof allowance.token_id === "string" ? allowance.token_id === tokenId : true;
+    const spenderMatch = typeof allowance.spender === "string" ? allowance.spender === spenderId : true;
+    return tokenMatch && spenderMatch;
+  });
+
+  return parseMirrorAmount(match?.amount);
+}
+
 async function executeSponsoredTransaction(params: SponsoredExecutionParams): Promise<SponsoredExecutionResult> {
+  const formatUnknownError = (error: unknown) => (error instanceof Error ? error.message : String(error));
+  const extractRevertData = (error: unknown): string | null => {
+    const visited = new Set<unknown>();
+    const stack: unknown[] = [error];
+
+    while (stack.length > 0) {
+      const value = stack.pop();
+      if (!value || typeof value !== "object" || visited.has(value)) continue;
+      visited.add(value);
+
+      const record = value as Record<string, unknown>;
+      const data = record.data;
+      if (typeof data === "string" && data.startsWith("0x") && data.length >= 10) {
+        return data;
+      }
+
+      for (const key of ["error", "info", "cause"]) {
+        if (record[key] !== undefined) stack.push(record[key]);
+      }
+    }
+
+    return null;
+  };
+  const decodeRevertData = (revertData: string): string => {
+    for (const candidate of params.decodeInterfaces ?? []) {
+      try {
+        const parsed = candidate.parseError(revertData);
+        if (parsed) {
+          const args = parsed.args.map(arg => (typeof arg === "bigint" ? arg.toString() : String(arg))).join(", ");
+          return `${parsed.name}(${args})`;
+        }
+      } catch {
+        // Continue trying other interfaces and fallback decoders.
+      }
+    }
+
+    const selector = revertData.slice(0, 10).toLowerCase();
+    try {
+      if (selector === "0x08c379a0") {
+        const [reason] = new Interface(["function Error(string)"]).decodeFunctionData("Error", revertData);
+        return `Error(${String(reason)})`;
+      }
+      if (selector === "0x4e487b71") {
+        const [panicCode] = new Interface(["function Panic(uint256)"]).decodeFunctionData("Panic", revertData);
+        return `Panic(${String(panicCode)})`;
+      }
+    } catch {
+      // Fall through to raw selector output.
+    }
+    return `revertData=${revertData}`;
+  };
+  const decodeRevertFromError = (error: unknown): string | null => {
+    const revertData = extractRevertData(error);
+    if (!revertData || revertData === "0x") return null;
+    return decodeRevertData(revertData);
+  };
+  const simulateForRevertMessage = async (): Promise<string | null> => {
+    try {
+      await params.provider.call({
+        from: params.from,
+        to: params.to,
+        data: params.data,
+        value: params.value ?? 0n
+      });
+      return null;
+    } catch (error) {
+      return decodeRevertFromError(error);
+    }
+  };
+
   const network = await params.provider.getNetwork();
   const chainId = BigInt(network.chainId);
   const estimatedGas = await params.provider
@@ -332,7 +579,12 @@ async function executeSponsoredTransaction(params: SponsoredExecutionParams): Pr
   const receiptStatus = receipt.status.toString();
 
   if (receiptStatus !== "SUCCESS") {
-    throw new Error(`Sponsored transaction failed with status ${receiptStatus}`);
+    const decoded = await simulateForRevertMessage();
+    throw new Error(
+      decoded
+        ? `Sponsored transaction failed with status ${receiptStatus}. Contract revert: ${decoded}`
+        : `Sponsored transaction failed with status ${receiptStatus}`
+    );
   }
 
   const record = await response.getRecord(params.paymasterClient as never).catch(() => null);
@@ -390,6 +642,8 @@ export async function getLaunchpadCampaigns(): Promise<LaunchpadCampaignView[]> 
   const getCachedTokenMetadata = (tokenAddress: string) => {
     const address = getAddress(tokenAddress);
     const cached = tokenCache.get(address);
+
+    console.log({address})
     if (cached) return cached;
 
     const request = getTokenMetadata(provider, address);
@@ -418,15 +672,16 @@ export async function getLaunchpadCampaigns(): Promise<LaunchpadCampaignView[]> 
 
       const listing = normalizeListing(listingRaw);
       const status = normalizeStatus(statusRaw);
+      console.log({status,listing})
       const { fundingSupplyRaw, campaignSupplyRaw } = await readCampaignSuppliesWithFallback({
         campaign,
         campaignAddress,
-        listing,
-        provider
+        listing
       });
       const statusLabel = getStatusLabel(status);
       const deadlineUnix = Number(listing.deadline);
 
+      console.log({statusLabel, deadlineUnix})
       const [fundingToken, campaignToken] = await Promise.all([
         getCachedTokenMetadata(listing.fundingToken),
         getCachedTokenMetadata(listing.campaignToken)
@@ -452,6 +707,8 @@ export async function getLaunchpadCampaigns(): Promise<LaunchpadCampaignView[]> 
       } satisfies LaunchpadCampaignView;
     })
   );
+
+  console.log({campaignResults})
   const campaigns: LaunchpadCampaignView[] = [];
   for (const result of campaignResults) {
     if (result.status === "fulfilled") {
@@ -496,9 +753,8 @@ export async function participateInCampaign(params: {
     throw new Error("Campaign deadline has passed");
   }
 
-  const fundingToken = new Contract(listing.fundingToken, ERC20_ABI, provider);
-  const fundingTokenDecimalsRaw = await fundingToken.decimals().catch(() => 18);
-  const fundingTokenDecimals = Number(fundingTokenDecimalsRaw);
+  const fundingTokenMetadata = await getTokenMetadataFromHts(listing.fundingToken);
+  const fundingTokenDecimals = fundingTokenMetadata?.decimals ?? (isWhbarToken(listing.fundingToken) ? 8 : 18);
 
   let amountRaw: bigint;
   try {
@@ -535,12 +791,12 @@ export async function participateInCampaign(params: {
     let nonce = await provider.getTransactionCount(participantEvmAddress, "pending");
 
     if (acceptsHbarFunding) {
-      const whbarToken = new Contract(listing.fundingToken, ERC20_ABI, provider);
-      const [balanceForEvmAddress, balanceForContractAddress] = await Promise.all([
-        whbarToken.balanceOf(participantEvmAddress).then((value: bigint) => BigInt(value)).catch(() => null),
-        whbarToken.balanceOf(participantContractAddress).then((value: bigint) => BigInt(value)).catch(() => null)
+      const [balanceForAccountId, balanceForEvmAddress, balanceForContractAddress] = await Promise.all([
+        getTokenBalanceFromHts(listing.fundingToken, { accountId: signerContext.hederaAccountId }),
+        getTokenBalanceFromHts(listing.fundingToken, { accountAddress: participantEvmAddress }),
+        getTokenBalanceFromHts(listing.fundingToken, { accountAddress: participantContractAddress })
       ]);
-      const availableWhbar = balanceForEvmAddress ?? balanceForContractAddress ?? 0n;
+      const availableWhbar = balanceForAccountId ?? balanceForEvmAddress ?? balanceForContractAddress ?? 0n;
 
       if (availableWhbar < amountRaw) {
         const wrapAmount = amountRaw - availableWhbar;
@@ -568,16 +824,33 @@ export async function participateInCampaign(params: {
       }
     }
 
-    let allowance = 0n;
-    try {
-      allowance = BigInt(await fundingToken.allowance(participantEvmAddress, normalizedCampaignAddress));
-    } catch {
-      try {
-        allowance = BigInt(await fundingToken.allowance(participantContractAddress, normalizedCampaignAddress));
-      } catch {
-        allowance = 0n;
-      }
-    }
+    const [ownerAccountIdForContractAddress, ownerAccountIdForEvmAddress] = await Promise.all([
+      resolveAccountIdFromAddress(participantContractAddress),
+      resolveAccountIdFromAddress(participantEvmAddress)
+    ]);
+
+    const [allowanceForAccountId, allowanceForContractAddress, allowanceForEvmAddress] = await Promise.all([
+      getTokenAllowanceFromHts({
+        tokenAddress: listing.fundingToken,
+        ownerAccountId: signerContext.hederaAccountId,
+        spenderAddress: normalizedCampaignAddress
+      }),
+      ownerAccountIdForContractAddress
+        ? getTokenAllowanceFromHts({
+            tokenAddress: listing.fundingToken,
+            ownerAccountId: ownerAccountIdForContractAddress,
+            spenderAddress: normalizedCampaignAddress
+          })
+        : Promise.resolve(null),
+      ownerAccountIdForEvmAddress
+        ? getTokenAllowanceFromHts({
+            tokenAddress: listing.fundingToken,
+            ownerAccountId: ownerAccountIdForEvmAddress,
+            spenderAddress: normalizedCampaignAddress
+          })
+        : Promise.resolve(null)
+    ]);
+    const allowance = allowanceForAccountId ?? allowanceForContractAddress ?? allowanceForEvmAddress ?? 0n;
 
     if (allowance < amountRaw) {
       const approveData = erc20Interface.encodeFunctionData("approve", [normalizedCampaignAddress, MaxUint256]);
@@ -591,7 +864,8 @@ export async function participateInCampaign(params: {
         from: participantEvmAddress,
         to: listing.fundingToken,
         data: approveData,
-        gasLimit: 150_000n
+        gasLimit: 150_000n,
+        decodeInterfaces: [erc20Interface]
       });
 
       transactions.push({
@@ -613,7 +887,8 @@ export async function participateInCampaign(params: {
       from: participantEvmAddress,
       to: normalizedCampaignAddress,
       data: contributeData,
-      gasLimit: 450_000n
+      gasLimit: 450_000n,
+      decodeInterfaces: [contracts.campaignInterface]
     });
 
     transactions.push({
