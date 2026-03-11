@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldCheck, Wallet } from "lucide-react";
 import { motion } from "framer-motion";
+import { LaunchpadPanel } from "./launchpad-panel";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { useAuth } from "../auth/auth-provider";
@@ -46,6 +47,9 @@ export function AppShell() {
           <h1 className="text-3xl font-semibold tracking-tight">Welcome, {displayName}</h1>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline">
+            <Link href="#launchpad">Launchpad</Link>
+          </Button>
           <Button variant="outline" onClick={() => router.push("/")}>Landing</Button>
           <Button
             variant="destructive"
@@ -88,6 +92,12 @@ export function AppShell() {
               <Link href="/" className="text-foreground underline underline-offset-4">Return to marketing site</Link>
             </CardContent>
           </Card>
+        </motion.div>
+      </section>
+
+      <section id="launchpad" className="mx-auto mt-8 w-full max-w-4xl scroll-mt-24">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.18 }}>
+          <LaunchpadPanel />
         </motion.div>
       </section>
     </main>

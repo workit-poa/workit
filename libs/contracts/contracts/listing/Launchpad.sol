@@ -37,8 +37,7 @@ contract Launchpad is
 	using GTokenLib for IGToken.Attributes;
 	using Epochs for Epochs.Storage;
 
-	uint256 public constant MAX_DURATION = 180 days;
-	uint256 public constant MIN_DURATION = 30 days;
+	uint256 public constant MIN_DURATION = 1 minutes;
 
 	uint256 public constant MAX_LOCK_EPOCHS = 1080;
 	uint256 public constant MIN_LOCK_EPOCHS = 90;
@@ -285,8 +284,8 @@ contract Launchpad is
 		if (listing.deadline <= block.timestamp)
 			revert InvalidDeadline(listing.deadline, block.timestamp);
 		uint256 duration = listing.deadline - block.timestamp;
-		if (duration < MIN_DURATION || duration > MAX_DURATION)
-			revert InvalidDuration(duration, MIN_DURATION, MAX_DURATION);
+		if (duration <= MIN_DURATION)
+			revert InvalidDuration(duration, MIN_DURATION + 1, type(uint256).max);
 
 		// --- Lock epochs check ---
 		if (

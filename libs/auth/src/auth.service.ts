@@ -28,6 +28,36 @@ export interface AuthUser {
   createdAt: Date;
 }
 
+export interface ManagedWalletSignerContext {
+  userId: string;
+  hederaAccountId: string;
+  kmsKeyId: string;
+}
+
+export interface UsdcFaucetEligibility {
+  eligible: boolean;
+  retryAfterSeconds: number;
+  nextEligibleAt: Date | null;
+}
+
+export interface UsdcFaucetClaimReservation {
+  userId: string;
+  previousClaimedAt: Date | null;
+  reservedAt: Date;
+}
+
+export type UsdcFaucetClaimReservationResult =
+  | {
+      ok: true;
+      reservation: UsdcFaucetClaimReservation;
+      nextEligibleAt: Date;
+    }
+  | {
+      ok: false;
+      retryAfterSeconds: number;
+      nextEligibleAt: Date;
+    };
+
 function toAuthUser(user: UserRow): AuthUser {
   return {
     id: user.id,
@@ -247,5 +277,36 @@ export function createSessionPayload(userId: string): SessionPayload {
   return {
     userId,
     issuedAt: new Date().toISOString()
+  };
+}
+
+export async function getManagedWalletSignerContext(userId: string): Promise<ManagedWalletSignerContext> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    throw new Error("userId is required");
+  }
+
+  const db = getDb();
+  const [user] = await db
+    .select({
+      id: users.id,
+      hederaAccountId: users.hederaAccountId,
+      kmsKeyId: users.kmsKeyId
+    })
+    .from(users)
+    .where(eq(users.id, normalizedUserId))
+    .limit(1);
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+  if (!user.hederaAccountId || !user.kmsKeyId) {
+    throw new Error("Managed wallet not provisioned for this user");
+  }
+
+  return {
+    userId: user.id,
+    hederaAccountId: user.hederaAccountId,
+    kmsKeyId: user.kmsKeyId
   };
 }

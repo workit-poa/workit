@@ -99,7 +99,20 @@ Deploy flow:
 11. Deploy `Campaign` beacon.
 12. Deploy/init `Launchpad`.
 13. Prepare token approvals.
-14. Create WRK/USDC campaign.
+14. Create WRK/HBAR campaign (funding token uses WHBAR on-chain).
+
+After each successful deploy, the script also writes a deployment ABI library:
+
+- `libs/contracts/deployments/<chainId>/<ContractName>.json`
+
+Each file uses this schema:
+
+```json
+{
+  "address": "0x...",
+  "abi": []
+}
+```
 
 Optional deploy env overrides (`libs/contracts/.env` or `.env.local`):
 
@@ -116,18 +129,22 @@ Optional deploy env overrides (`libs/contracts/.env` or `.env.local`):
 - `WORK_REWARDS_ADDRESS`
 - `WORK_STAKING_ADDRESS`
 - `LAUNCHPAD_URI`
+- `ICO_FUNDING_ASSET` (`HBAR` or `WHBAR`; both resolve to WHBAR on-chain)
+- `ICO_GOAL` (funding goal amount in funding token smallest unit; default `100000000` = 1 HBAR)
+- `ICO_DURATION_SECONDS` (must be greater than `60`; default `3600`)
 
 Launchpad orchestration notes:
 
-- Deploy script hardcodes Hedera testnet defaults:
+- Deploy script uses Hedera testnet defaults:
   - Router: `0.0.19264` (`0x0000000000000000000000000000000000004b40`)
-  - Funding token (USDC): `0.0.429274` (`0x0000000000000000000000000000000000068cda`)
+  - Funding token (WHBAR): `0.0.15057` (`0x0000000000000000000000000000000000003ad1`)
+  - Funding asset mode: `HBAR` by default (implemented via WHBAR at contract level)
   - Campaign token mode: `ethers.ZeroAddress` sentinel meaning "use deployed WRK"
   - Security nonces: `[]` (first campaign skips security GTokens)
   - Campaign supply: `WRK_ICO_FUNDS`
-  - Campaign goal: `1_000 * 10^6` (1000 USDC)
+  - Campaign goal: `1 * 10^8` (1 HBAR)
   - Lock: `180` epochs
-  - Deadline: `45` days
+  - Duration: `3600` seconds (1 hour)
 - `createWorkToken` now transfers ICO WRK supply directly to the owner during creation.
 
 ## Open a console on Hedera
