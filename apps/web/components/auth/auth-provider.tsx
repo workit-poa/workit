@@ -7,6 +7,7 @@ export type AuthUser = {
   id: string;
   email: string | null;
   hederaAccountId: string | null;
+  evmAddress: string | null;
   createdAt: string;
 };
 
@@ -32,6 +33,7 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
           id: data.user.id,
           email: data.user.email ?? null,
           hederaAccountId: data.user.hederaAccountId ?? null,
+          evmAddress: data.user.evmAddress ?? null,
           createdAt: data.user.createdAt
         }
       } satisfies AuthSession)

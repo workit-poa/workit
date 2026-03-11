@@ -1,5 +1,5 @@
 {
-  "address": "0x547700EFA429440021526fee29831cF3c58C55b8",
+  "address": "0x20856524AE5F8B6d5D48b1dc07444C35f8a1Fe9f",
   "abi": [
     {
       "inputs": [
@@ -300,6 +300,22 @@
       "inputs": [
         {
           "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "responseCode",
+          "type": "uint256"
+        }
+      ],
+      "name": "TokenAssociationFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
           "name": "caller",
           "type": "address"
         },
@@ -444,6 +460,13 @@
       ],
       "name": "OwnershipTransferred",
       "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "associateListingTokens",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
     },
     {
       "inputs": [],

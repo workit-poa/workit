@@ -17,7 +17,6 @@ import {
     Contract,
     Interface,
     type InterfaceAbi,
-    MaxUint256,
     getAddress,
     getBytes,
     isAddress,
@@ -27,10 +26,17 @@ import {
 import type {
     CampaignStatusCode,
     CampaignStatusLabel,
+    CampaignContributionPreview,
     LaunchpadCampaignView,
     ParticipateCampaignResult,
     SponsoredTxResult,
 } from "./types";
+import {
+    executeCampaignContribution,
+    HBAR_DECIMALS,
+    prepareCampaignContribution,
+    type ContributionConfig,
+} from "./contribution";
 
 const LAUNCHPAD_READ_ABI = [
     "function campaigns() view returns (address[])",
@@ -236,9 +242,13 @@ function resolveMaxGasAllowanceHbar(): string {
 function resolveWhbarAddress(): string {
     const configured = process.env.LAUNCHPAD_WHBAR_ADDRESS?.trim();
     const candidate =
-        configured && configured.length > 0
-            ? configured
-            : TESTNET_WHBAR_ADDRESS;
+        configured && configured.length > 0 ? configured : TESTNET_WHBAR_ADDRESS;
+    const network = parseHederaEvmNetwork(process.env.HEDERA_NETWORK);
+    if ((!configured || configured.length === 0) && network !== "testnet") {
+        throw new Error(
+            "LAUNCHPAD_WHBAR_ADDRESS must be configured for non-testnet networks",
+        );
+    }
     if (isAddress(candidate)) {
         return getAddress(candidate);
     }
@@ -249,6 +259,22 @@ function resolveWhbarAddress(): string {
     } catch {
         throw new Error(
             "LAUNCHPAD_WHBAR_ADDRESS must be a valid EVM address or Hedera token ID",
+        );
+    }
+}
+
+function resolveNativeHbarReserveTinybars(): bigint {
+    const value =
+        process.env.LAUNCHPAD_NATIVE_HBAR_RESERVE_HBAR?.trim() || "0.05";
+    try {
+        const reserve = parseUnits(value, HBAR_DECIMALS);
+        if (reserve < 0n) {
+            throw new Error("negative reserve");
+        }
+        return reserve;
+    } catch {
+        throw new Error(
+            "LAUNCHPAD_NATIVE_HBAR_RESERVE_HBAR must be a non-negative decimal HBAR value",
         );
     }
 }
@@ -353,29 +379,35 @@ async function readCampaignSuppliesWithFallback(params: {
 }
 
 async function getTokenMetadata(
-    _: JsonRpcProvider,
+    provider: JsonRpcProvider,
     tokenAddress: string,
 ): Promise<TokenMetadata> {
     const normalizedAddress = getAddress(tokenAddress);
     const isWhbar = isWhbarToken(normalizedAddress);
-    const metadataFromHts = await getTokenMetadataFromHts(normalizedAddress);
+    const token = new Contract(normalizedAddress, ERC20_ABI, provider);
+    const [metadataFromHts, symbolFromContract, decimalsFromContract] =
+        await Promise.all([
+            getTokenMetadataFromHts(normalizedAddress),
+            token.symbol().catch(() => null),
+            readTokenDecimals(token),
+        ]);
 
-    if (metadataFromHts) {
-        return metadataFromHts;
-    }
-
-    if (isWhbar) {
-        return {
-            address: normalizedAddress,
-            symbol: "HBAR",
-            decimals: 8,
-        };
-    }
+    const symbolFallback = isWhbar ? "HBAR" : "TOKEN";
+    const rawSymbol =
+        typeof symbolFromContract === "string" &&
+        symbolFromContract.trim().length > 0
+            ? symbolFromContract
+            : metadataFromHts?.symbol ?? symbolFallback;
+    const symbol = rawSymbol.toUpperCase() === "WHBAR" ? "HBAR" : rawSymbol;
+    const decimals =
+        decimalsFromContract ??
+        metadataFromHts?.decimals ??
+        (isWhbar ? 8 : 18);
 
     return {
         address: normalizedAddress,
-        symbol: "TOKEN",
-        decimals: 18,
+        symbol,
+        decimals,
     };
 }
 
@@ -408,6 +440,72 @@ function parseMirrorAmount(value: unknown): bigint | null {
         return BigInt(value);
     }
     return null;
+}
+
+function parseTokenDecimals(value: unknown): number | null {
+    const numeric =
+        typeof value === "bigint"
+            ? Number(value)
+            : typeof value === "number"
+              ? value
+              : typeof value === "string"
+                ? Number(value)
+                : Number.NaN;
+    if (!Number.isInteger(numeric) || numeric < 0) {
+        return null;
+    }
+    return numeric;
+}
+
+async function readTokenDecimals(token: Contract): Promise<number | null> {
+    try {
+        return parseTokenDecimals(await token.decimals());
+    } catch {
+        return null;
+    }
+}
+
+async function readTokenBalance(
+    token: Contract,
+    account: string,
+): Promise<bigint | null> {
+    try {
+        return BigInt(await token.balanceOf(account));
+    } catch {
+        return null;
+    }
+}
+
+async function readTokenAllowance(
+    token: Contract,
+    owner: string,
+    spender: string,
+): Promise<bigint | null> {
+    try {
+        return BigInt(await token.allowance(owner, spender));
+    } catch {
+        return null;
+    }
+}
+
+async function readNativeHbarBalance(
+    provider: JsonRpcProvider,
+    account: string,
+): Promise<bigint | null> {
+    try {
+        return BigInt(await provider.getBalance(account));
+    } catch {
+        return null;
+    }
+}
+
+function pickFirstNonNull(...values: Array<bigint | null>): bigint {
+    for (const value of values) {
+        if (value !== null) {
+            return value;
+        }
+    }
+    return 0n;
 }
 
 function parseNonNegativeInteger(value: unknown, fallback: number): number {
@@ -573,8 +671,6 @@ async function getTokenAllowanceFromHts(params: {
 async function executeSponsoredTransaction(
     params: SponsoredExecutionParams,
 ): Promise<SponsoredExecutionResult> {
-    const formatUnknownError = (error: unknown) =>
-        error instanceof Error ? error.message : String(error);
     const extractRevertData = (error: unknown): string | null => {
         const visited = new Set<unknown>();
         const stack: unknown[] = [error];
@@ -627,7 +723,7 @@ async function executeSponsoredTransaction(
                 const [reason] = new Interface([
                     "function Error(string)",
                 ]).decodeFunctionData("Error", revertData);
-                return `Error(${String(reason)})`;
+                return String(reason);
             }
             if (selector === "0x4e487b71") {
                 const [panicCode] = new Interface([
@@ -694,17 +790,23 @@ async function executeSponsoredTransaction(
         .setMaxGasAllowanceHbar(resolveMaxGasAllowanceHbar());
 
     const response = await tx.execute(params.paymasterClient as never);
-    const receipt = await response.getReceipt(params.paymasterClient as never);
+    const receipt = await response
+        .getReceipt(params.paymasterClient as never)
+        .catch(async (error) => {
+            const message =
+                error instanceof Error ? error.message : String(error);
+            if (message.includes("CONTRACT_REVERT_EXECUTED")) {
+                const decoded = await simulateForRevertMessage();
+                throw new Error(decoded ?? "CONTRACT_REVERT_EXECUTED");
+            }
+            throw error;
+        });
     const transactionId = response.transactionId.toString();
     const receiptStatus = receipt.status.toString();
 
     if (receiptStatus !== "SUCCESS") {
         const decoded = await simulateForRevertMessage();
-        throw new Error(
-            decoded
-                ? `Sponsored transaction failed with status ${receiptStatus}. Contract revert: ${decoded}`
-                : `Sponsored transaction failed with status ${receiptStatus}`,
-        );
+        throw new Error(decoded ?? receiptStatus);
     }
 
     const record = await response
@@ -712,7 +814,7 @@ async function executeSponsoredTransaction(
         .catch(() => null);
     const revertReason = record?.contractFunctionResult?.errorMessage?.trim();
     if (revertReason) {
-        throw new Error(`Contract reverted: ${revertReason}`);
+        throw new Error(revertReason);
     }
 
     return {
@@ -871,11 +973,115 @@ export async function getLaunchpadCampaigns(): Promise<
     return campaigns.sort((a, b) => a.deadlineUnix - b.deadlineUnix);
 }
 
-export async function participateInCampaign(params: {
+async function resolveCampaignFundingReadContext(params: {
+    provider: JsonRpcProvider;
+    tokenAddress: string;
+    campaignAddress: string;
+    signerAccountId: string;
+    participantEvmAddress: string;
+    participantContractAddress: string;
+}): Promise<{ whbarBalance: bigint; nativeHbarBalance: bigint; allowance: bigint }> {
+    const token = new Contract(params.tokenAddress, ERC20_ABI, params.provider);
+    const [ownerAccountIdForContractAddress, ownerAccountIdForEvmAddress] =
+        await Promise.all([
+            resolveAccountIdFromAddress(params.participantContractAddress),
+            resolveAccountIdFromAddress(params.participantEvmAddress),
+        ]);
+
+    const [
+        balanceForEvmAddressOnChain,
+        balanceForContractAddressOnChain,
+        balanceForAccountId,
+        balanceForEvmAddress,
+        balanceForContractAddress,
+        nativeForEvmAddress,
+        nativeForContractAddress,
+        allowanceForEvmAddressOnChain,
+        allowanceForContractAddressOnChain,
+        allowanceForAccountIdFromHts,
+        allowanceForContractAddressFromHts,
+        allowanceForEvmAddressFromHts,
+    ] = await Promise.all([
+        readTokenBalance(token, params.participantEvmAddress),
+        readTokenBalance(token, params.participantContractAddress),
+        getTokenBalanceFromHts(params.tokenAddress, {
+            accountId: params.signerAccountId,
+        }),
+        getTokenBalanceFromHts(params.tokenAddress, {
+            accountAddress: params.participantEvmAddress,
+        }),
+        getTokenBalanceFromHts(params.tokenAddress, {
+            accountAddress: params.participantContractAddress,
+        }),
+        readNativeHbarBalance(params.provider, params.participantEvmAddress),
+        readNativeHbarBalance(params.provider, params.participantContractAddress),
+        readTokenAllowance(
+            token,
+            params.participantEvmAddress,
+            params.campaignAddress,
+        ),
+        readTokenAllowance(
+            token,
+            params.participantContractAddress,
+            params.campaignAddress,
+        ),
+        getTokenAllowanceFromHts({
+            tokenAddress: params.tokenAddress,
+            ownerAccountId: params.signerAccountId,
+            spenderAddress: params.campaignAddress,
+        }),
+        ownerAccountIdForContractAddress
+            ? getTokenAllowanceFromHts({
+                  tokenAddress: params.tokenAddress,
+                  ownerAccountId: ownerAccountIdForContractAddress,
+                  spenderAddress: params.campaignAddress,
+              })
+            : Promise.resolve(null),
+        ownerAccountIdForEvmAddress
+            ? getTokenAllowanceFromHts({
+                  tokenAddress: params.tokenAddress,
+                  ownerAccountId: ownerAccountIdForEvmAddress,
+                  spenderAddress: params.campaignAddress,
+              })
+            : Promise.resolve(null),
+    ]);
+
+    return {
+        whbarBalance: pickFirstNonNull(
+            balanceForEvmAddressOnChain,
+            balanceForContractAddressOnChain,
+            balanceForAccountId,
+            balanceForEvmAddress,
+            balanceForContractAddress,
+        ),
+        nativeHbarBalance: pickFirstNonNull(
+            nativeForEvmAddress,
+            nativeForContractAddress,
+        ),
+        allowance: pickFirstNonNull(
+            allowanceForEvmAddressOnChain,
+            allowanceForContractAddressOnChain,
+            allowanceForAccountIdFromHts,
+            allowanceForContractAddressFromHts,
+            allowanceForEvmAddressFromHts,
+        ),
+    };
+}
+
+async function createCampaignContributionContext(params: {
     userId: string;
     campaignAddress: string;
     amount: string;
-}): Promise<ParticipateCampaignResult> {
+}): Promise<{
+    provider: JsonRpcProvider;
+    contracts: ResolvedDeploymentContracts;
+    signerContext: Awaited<ReturnType<typeof getManagedWalletSignerContext>>;
+    normalizedCampaignAddress: string;
+    listing: CampaignListing;
+    amountInput: string;
+    amountRaw: bigint;
+    fundingTokenDecimals: number;
+}> {
     const normalizedCampaignAddress = getAddress(params.campaignAddress);
     const amountInput = params.amount.trim();
     if (!amountInput) {
@@ -895,6 +1101,7 @@ export async function participateInCampaign(params: {
     ]);
     const listing = normalizeListing(listingRaw);
     const status = normalizeStatus(statusRaw);
+    const fundingToken = new Contract(listing.fundingToken, ERC20_ABI, provider);
 
     if (status !== 1) {
         throw new Error("Campaign is not currently accepting contributions");
@@ -905,12 +1112,15 @@ export async function participateInCampaign(params: {
         throw new Error("Campaign deadline has passed");
     }
 
-    const fundingTokenMetadata = await getTokenMetadataFromHts(
-        listing.fundingToken,
-    );
+    const [fundingTokenMetadata, fundingTokenDecimalsFromContract] =
+        await Promise.all([
+            getTokenMetadataFromHts(listing.fundingToken),
+            readTokenDecimals(fundingToken),
+        ]);
     const fundingTokenDecimals =
+        fundingTokenDecimalsFromContract ??
         fundingTokenMetadata?.decimals ??
-        (isWhbarToken(listing.fundingToken) ? 8 : 18);
+        (isWhbarToken(listing.fundingToken) ? HBAR_DECIMALS : 18);
 
     let amountRaw: bigint;
     try {
@@ -925,6 +1135,36 @@ export async function participateInCampaign(params: {
     }
 
     const signerContext = await getManagedWalletSignerContext(params.userId);
+
+    return {
+        provider,
+        contracts,
+        signerContext,
+        normalizedCampaignAddress,
+        listing,
+        amountInput,
+        amountRaw,
+        fundingTokenDecimals,
+    };
+}
+
+async function buildContributionConfig(params: {
+    userId: string;
+    campaignAddress: string;
+    amount: string;
+}): Promise<{
+    config: ContributionConfig;
+    provider: JsonRpcProvider;
+    contracts: ResolvedDeploymentContracts;
+    listing: CampaignListing;
+    signerContext: Awaited<ReturnType<typeof getManagedWalletSignerContext>>;
+    participantEvmAddress: string;
+    participantContractAddress: string;
+    kms: ReturnType<typeof createKmsClientFromEnv>;
+    hederaNetwork: HederaNetwork;
+    paymasterClient: ReturnType<typeof createHederaClient>;
+}> {
+    const contributionContext = await createCampaignContributionContext(params);
     const kms = createKmsClientFromEnv();
 
     const hederaNetwork = resolveSponsoredHederaNetwork();
@@ -935,170 +1175,211 @@ export async function participateInCampaign(params: {
         operatorKey,
     });
 
-    try {
-        const signer: KmsEvmSigner = await createKmsEvmSigner({
-            kms,
-            keyId: signerContext.kmsKeyId,
-            provider,
-        });
-        const participantEvmAddress = await signer.getAddress();
-        const participantContractAddress = accountIdToSolidityAddress(
-            signerContext.hederaAccountId,
-        );
-        const acceptsHbarFunding = isWhbarToken(listing.fundingToken);
+    const signer: KmsEvmSigner = await createKmsEvmSigner({
+        kms,
+        keyId: contributionContext.signerContext.kmsKeyId,
+        provider: contributionContext.provider,
+    });
+    const participantEvmAddress = await signer.getAddress();
+    const participantContractAddress = accountIdToSolidityAddress(
+        contributionContext.signerContext.hederaAccountId,
+    );
 
-        const transactions: SponsoredTxResult[] = [];
-        let nonce = await provider.getTransactionCount(
-            participantEvmAddress,
+    return {
+        config: {
+            campaignAddress: contributionContext.normalizedCampaignAddress,
+            fundingToken: contributionContext.listing.fundingToken,
+            amountInput: contributionContext.amountInput,
+            amountRaw: contributionContext.amountRaw,
+            fundingTokenDecimals: contributionContext.fundingTokenDecimals,
+            recipient: participantContractAddress,
+            nativeHbarReserveRaw: resolveNativeHbarReserveTinybars(),
+            isWhbarFundingToken: isWhbarToken(
+                contributionContext.listing.fundingToken,
+            ),
+        },
+        provider: contributionContext.provider,
+        contracts: contributionContext.contracts,
+        listing: contributionContext.listing,
+        signerContext: contributionContext.signerContext,
+        participantEvmAddress,
+        participantContractAddress,
+        kms,
+        hederaNetwork,
+        paymasterClient,
+    };
+}
+
+function createContributionReaders(ctx: {
+    provider: JsonRpcProvider;
+    listing: CampaignListing;
+    config: ContributionConfig;
+    signerContext: Awaited<ReturnType<typeof getManagedWalletSignerContext>>;
+    participantEvmAddress: string;
+    participantContractAddress: string;
+}): {
+    readWhbarBalance: () => Promise<bigint>;
+    readNativeHbarBalance: () => Promise<bigint>;
+    readAllowance: () => Promise<bigint>;
+} {
+    let snapshotPromise: Promise<{
+        whbarBalance: bigint;
+        nativeHbarBalance: bigint;
+        allowance: bigint;
+    }> | null = null;
+
+    const loadSnapshot = async () => {
+        if (!snapshotPromise) {
+            snapshotPromise = resolveCampaignFundingReadContext({
+                provider: ctx.provider,
+                tokenAddress: ctx.listing.fundingToken,
+                campaignAddress: ctx.config.campaignAddress,
+                signerAccountId: ctx.signerContext.hederaAccountId,
+                participantEvmAddress: ctx.participantEvmAddress,
+                participantContractAddress: ctx.participantContractAddress,
+            });
+        }
+
+        try {
+            return await snapshotPromise;
+        } finally {
+            snapshotPromise = null;
+        }
+    };
+
+    return {
+        readWhbarBalance: async () => (await loadSnapshot()).whbarBalance,
+        readNativeHbarBalance: async () =>
+            (await loadSnapshot()).nativeHbarBalance,
+        readAllowance: async () => (await loadSnapshot()).allowance,
+    };
+}
+
+export async function previewCampaignContribution(params: {
+    userId: string;
+    campaignAddress: string;
+    amount: string;
+}): Promise<CampaignContributionPreview> {
+    const ctx = await buildContributionConfig(params);
+
+    try {
+        const reads = createContributionReaders(ctx);
+        return await prepareCampaignContribution({
+            config: ctx.config,
+            reads,
+        });
+    } finally {
+        ctx.kms.destroy();
+        ctx.paymasterClient.close();
+    }
+}
+
+export async function participateInCampaign(params: {
+    userId: string;
+    campaignAddress: string;
+    amount: string;
+}): Promise<ParticipateCampaignResult> {
+    const ctx = await buildContributionConfig(params);
+
+    try {
+        let nonce = await ctx.provider.getTransactionCount(
+            ctx.participantEvmAddress,
             "pending",
         );
 
-        if (acceptsHbarFunding) {
-            const [
-                balanceForAccountId,
-                balanceForEvmAddress,
-                balanceForContractAddress,
-            ] = await Promise.all([
-                getTokenBalanceFromHts(listing.fundingToken, {
-                    accountId: signerContext.hederaAccountId,
-                }),
-                getTokenBalanceFromHts(listing.fundingToken, {
-                    accountAddress: participantEvmAddress,
-                }),
-                getTokenBalanceFromHts(listing.fundingToken, {
-                    accountAddress: participantContractAddress,
-                }),
-            ]);
-            const availableWhbar =
-                balanceForAccountId ??
-                balanceForEvmAddress ??
-                balanceForContractAddress ??
-                0n;
-
-            if (availableWhbar < amountRaw) {
-                const wrapAmount = amountRaw - availableWhbar;
-                const wrapData = whbarInterface.encodeFunctionData("deposit");
-                const wrapResult = await executeSponsoredTransaction({
-                    paymasterClient,
-                    hederaNetwork,
-                    kmsKeyId: signerContext.kmsKeyId,
-                    kms,
-                    provider,
-                    nonce,
-                    from: participantEvmAddress,
-                    to: listing.fundingToken,
-                    data: wrapData,
-                    gasLimit: 180_000n,
-                    value: wrapAmount,
-                });
-
-                transactions.push({
-                    type: "wrap_hbar",
-                    transactionId: wrapResult.transactionId,
-                    mirrorLink: wrapResult.mirrorLink,
-                });
-                nonce += 1;
-            }
-        }
-
-        const [ownerAccountIdForContractAddress, ownerAccountIdForEvmAddress] =
-            await Promise.all([
-                resolveAccountIdFromAddress(participantContractAddress),
-                resolveAccountIdFromAddress(participantEvmAddress),
-            ]);
-
-        const [
-            allowanceForAccountId,
-            allowanceForContractAddress,
-            allowanceForEvmAddress,
-        ] = await Promise.all([
-            getTokenAllowanceFromHts({
-                tokenAddress: listing.fundingToken,
-                ownerAccountId: signerContext.hederaAccountId,
-                spenderAddress: normalizedCampaignAddress,
-            }),
-            ownerAccountIdForContractAddress
-                ? getTokenAllowanceFromHts({
-                      tokenAddress: listing.fundingToken,
-                      ownerAccountId: ownerAccountIdForContractAddress,
-                      spenderAddress: normalizedCampaignAddress,
-                  })
-                : Promise.resolve(null),
-            ownerAccountIdForEvmAddress
-                ? getTokenAllowanceFromHts({
-                      tokenAddress: listing.fundingToken,
-                      ownerAccountId: ownerAccountIdForEvmAddress,
-                      spenderAddress: normalizedCampaignAddress,
-                  })
-                : Promise.resolve(null),
-        ]);
-        const allowance =
-            allowanceForAccountId ??
-            allowanceForContractAddress ??
-            allowanceForEvmAddress ??
-            0n;
-
-        if (allowance < amountRaw) {
-            const approveData = erc20Interface.encodeFunctionData("approve", [
-                normalizedCampaignAddress,
-                MaxUint256,
-            ]);
-            const approveResult = await executeSponsoredTransaction({
-                paymasterClient,
-                hederaNetwork,
-                kmsKeyId: signerContext.kmsKeyId,
-                kms,
-                provider,
-                nonce,
-                from: participantEvmAddress,
-                to: listing.fundingToken,
-                data: approveData,
-                gasLimit: 150_000n,
-                decodeInterfaces: [erc20Interface],
-            });
-
-            transactions.push({
-                type: "approve",
-                transactionId: approveResult.transactionId,
-                mirrorLink: approveResult.mirrorLink,
-            });
-            nonce += 1;
-        }
-
-        const contributeData = contracts.campaignInterface.encodeFunctionData(
-            "contribute",
-            [amountRaw, participantContractAddress],
-        );
-        const contributeResult = await executeSponsoredTransaction({
-            paymasterClient,
-            hederaNetwork,
-            kmsKeyId: signerContext.kmsKeyId,
-            kms,
-            provider,
-            nonce,
-            from: participantEvmAddress,
-            to: normalizedCampaignAddress,
-            data: contributeData,
-            gasLimit: 450_000n,
-            decodeInterfaces: [contracts.campaignInterface],
-        });
-
-        transactions.push({
-            type: "contribute",
-            transactionId: contributeResult.transactionId,
-            mirrorLink: contributeResult.mirrorLink,
+        const result = await executeCampaignContribution({
+            config: ctx.config,
+            runtime: {
+                reads: createContributionReaders(ctx),
+                writes: {
+                    wrapHbar: async (amount) => {
+                        const wrapData = whbarInterface.encodeFunctionData("deposit");
+                        const wrapResult = await executeSponsoredTransaction({
+                            paymasterClient: ctx.paymasterClient,
+                            hederaNetwork: ctx.hederaNetwork,
+                            kmsKeyId: ctx.signerContext.kmsKeyId,
+                            kms: ctx.kms,
+                            provider: ctx.provider,
+                            nonce,
+                            from: ctx.participantEvmAddress,
+                            to: ctx.listing.fundingToken,
+                            data: wrapData,
+                            gasLimit: 180_000n,
+                            value: amount,
+                        });
+                        nonce += 1;
+                        return {
+                            type: "wrap_hbar",
+                            transactionId: wrapResult.transactionId,
+                            mirrorLink: wrapResult.mirrorLink,
+                        };
+                    },
+                    approveFundingToken: async (amount) => {
+                        const approveData = erc20Interface.encodeFunctionData("approve", [
+                            ctx.config.campaignAddress,
+                            amount,
+                        ]);
+                        const approveResult = await executeSponsoredTransaction({
+                            paymasterClient: ctx.paymasterClient,
+                            hederaNetwork: ctx.hederaNetwork,
+                            kmsKeyId: ctx.signerContext.kmsKeyId,
+                            kms: ctx.kms,
+                            provider: ctx.provider,
+                            nonce,
+                            from: ctx.participantEvmAddress,
+                            to: ctx.listing.fundingToken,
+                            data: approveData,
+                            gasLimit: 150_000n,
+                            decodeInterfaces: [erc20Interface],
+                        });
+                        nonce += 1;
+                        return {
+                            type: "approve",
+                            transactionId: approveResult.transactionId,
+                            mirrorLink: approveResult.mirrorLink,
+                        };
+                    },
+                    contribute: async (amount, recipient) => {
+                        const contributeData =
+                            ctx.contracts.campaignInterface.encodeFunctionData(
+                                "contribute",
+                                [amount, recipient],
+                            );
+                        const contributeResult = await executeSponsoredTransaction({
+                            paymasterClient: ctx.paymasterClient,
+                            hederaNetwork: ctx.hederaNetwork,
+                            kmsKeyId: ctx.signerContext.kmsKeyId,
+                            kms: ctx.kms,
+                            provider: ctx.provider,
+                            nonce,
+                            from: ctx.participantEvmAddress,
+                            to: ctx.config.campaignAddress,
+                            data: contributeData,
+                            gasLimit: 450_000n,
+                            decodeInterfaces: [ctx.contracts.campaignInterface],
+                        });
+                        nonce += 1;
+                        return {
+                            type: "contribute",
+                            transactionId: contributeResult.transactionId,
+                            mirrorLink: contributeResult.mirrorLink,
+                        };
+                    },
+                },
+            },
         });
 
         return {
-            campaignAddress: normalizedCampaignAddress,
-            participantEvmAddress: participantContractAddress,
-            amount: amountInput,
-            amountRaw: amountRaw.toString(),
-            fundingToken: listing.fundingToken,
-            transactions,
+            preview: result.preview,
+            campaignAddress: ctx.config.campaignAddress,
+            participantEvmAddress: ctx.participantContractAddress,
+            amount: ctx.config.amountInput,
+            amountRaw: ctx.config.amountRaw.toString(),
+            fundingToken: ctx.listing.fundingToken,
+            transactions: result.transactions,
         };
     } finally {
-        kms.destroy();
-        paymasterClient.close();
+        ctx.kms.destroy();
+        ctx.paymasterClient.close();
     }
 }

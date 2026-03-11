@@ -395,6 +395,7 @@ contract Launchpad is
 		}
 
 		(address campaign, ) = _createCampaign(msg.sender, $.gToken, listing);
+		ICampaign(campaign).associateListingTokens();
 		$.campaignRequiresSecurity[campaign] = shouldProcessSecurity;
 		if (shouldProcessSecurity) {
 			_receiveSecurityGToken($, campaign, securityNonces, values);

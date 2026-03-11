@@ -75,6 +75,26 @@
       "address": "0xeDf76673d42a7Ba0B541e16218711b048B39268B",
       "txHash": "0x7a80924f0355d66976ac51dfcdc9d1d7085f388d0df2376cb06a2e21372e07b2",
       "kind": "uups"
+    },
+    {
+      "address": "0x76cC0ea49DD65542Ac08736ebaf202e7aB2acDc2",
+      "txHash": "0xfcdfa6a675c41f5d201b43c75707454456440933df4ce14ed5a8afbb590ac8a9",
+      "kind": "uups"
+    },
+    {
+      "address": "0xA53D8a74E6A23933eaA283eB099C0e7736E47FBb",
+      "txHash": "0x52820c1f17247c316f790473663bcece7a74e585fdb061ece1409e8890bf9fd7",
+      "kind": "uups"
+    },
+    {
+      "address": "0x8dDBED24B58eF39936d746f7ccCB9bdADdF108F6",
+      "txHash": "0x24502d5c47b7e0cd083f2616b041df3fec70d51e6d367e03d5f1ee02a2e0b6f3",
+      "kind": "uups"
+    },
+    {
+      "address": "0x45fD7eb1cAeAB90082F3d13Acc9c8a4C5937C897",
+      "txHash": "0xfad6db178d677689056f2951c0a3f44f17dd55c7be8e8b9ef6e4ebbd4b2a7458",
+      "kind": "uups"
     }
   ],
   "impls": {
@@ -1555,6 +1575,202 @@
               "label": "listing",
               "type": "t_struct(Listing)4723_storage",
               "src": "contracts/listing/Campaign.sol:35",
+              "offset": 0,
+              "slot": "2"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "25967942a37af8fc4caa3bce239e04d7ba60d62ff6876ac830b52a7aebbc031f": {
+      "address": "0x86441bC80Cdf0880e9EA42971b60Df958BC6626B",
+      "txHash": "0xa7f9b84855760cc421a507af6034468945a71e2fc4b2eeb58a0df4a01e70381b",
+      "layout": {
+        "solcVersion": "0.8.28",
+        "storage": [],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_enum(Status)5783": {
+            "label": "enum ICampaign.Status",
+            "members": [
+              "Pending",
+              "Funding",
+              "Failed",
+              "Success"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_struct(CampaignStorage)5581_storage": {
+            "label": "struct Campaign.CampaignStorage",
+            "members": [
+              {
+                "label": "launchpad",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "gToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "status",
+                "type": "t_enum(Status)5783",
+                "offset": 20,
+                "slot": "1"
+              },
+              {
+                "label": "listing",
+                "type": "t_struct(Listing)5794_storage",
+                "offset": 0,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "224"
+          },
+          "t_struct(InitializableStorage)1705_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(Listing)5794_storage": {
+            "label": "struct ICampaign.Listing",
+            "members": [
+              {
+                "label": "campaignToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "fundingToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "lockEpochs",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "goal",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "deadline",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_struct(OwnableStorage)1072_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          }
+        },
+        "namespaces": {
+          "erc7201:workit.contracts.listing.Campaign": [
+            {
+              "contract": "Campaign",
+              "label": "launchpad",
+              "type": "t_address",
+              "src": "contracts/listing/Campaign.sol:34",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Campaign",
+              "label": "gToken",
+              "type": "t_address",
+              "src": "contracts/listing/Campaign.sol:35",
+              "offset": 0,
+              "slot": "1"
+            },
+            {
+              "contract": "Campaign",
+              "label": "status",
+              "type": "t_enum(Status)5783",
+              "src": "contracts/listing/Campaign.sol:36",
+              "offset": 20,
+              "slot": "1"
+            },
+            {
+              "contract": "Campaign",
+              "label": "listing",
+              "type": "t_struct(Listing)5794_storage",
+              "src": "contracts/listing/Campaign.sol:37",
               "offset": 0,
               "slot": "2"
             }

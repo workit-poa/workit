@@ -87,6 +87,9 @@ export function AppShell() {
               <p className="inline-flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-primary" aria-hidden="true" /> Managed wallet: {session.user.hederaAccountId || "Provisioning pending"}
               </p>
+              <p className="inline-flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-primary" aria-hidden="true" /> EVM address: {session.user.evmAddress || "Provisioning pending"}
+              </p>
               <p>KMS-backed wallet signing is orchestrated server-side for submissions, claims, and sponsored transactions.</p>
               <p>This is a minimal post-auth shell ready for quest feeds, creator tools, and proof history modules.</p>
               <Link href="/" className="text-foreground underline underline-offset-4">Return to marketing site</Link>

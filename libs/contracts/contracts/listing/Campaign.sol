@@ -6,6 +6,8 @@ import {IERC1155} from "@openzeppelin/contracts/interfaces/IERC1155.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IERC1155Receiver} from "@openzeppelin/contracts/interfaces/IERC1155Receiver.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IHRC719} from "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHRC719.sol";
+import {HederaResponseCodes} from "@hashgraph/smart-contracts/contracts/system-contracts/HederaResponseCodes.sol";
 
 import {ILaunchpad} from "./ILaunchpad.sol";
 import {Launchpad} from "./Launchpad.sol";
@@ -84,6 +86,8 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		$.gToken = gToken_;
 		$.listing = listing_;
 		$.status = Status.Pending;
+
+		associateListingTokens();
 	}
 
 	/*//////////////////////////////////////////////////////////////
@@ -122,6 +126,7 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		address to
 	) external notExpired inStatus(Status.Funding) {
 		CampaignStorage storage $ = _campaignStorage();
+		_associateTokenIfRequired($.listing.fundingToken);
 
 		IERC20($.listing.fundingToken).transferFrom(
 			msg.sender,
@@ -130,6 +135,29 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		);
 
 		_contribute(amount, to, $.launchpad);
+	}
+
+	function _associateTokenIfRequired(address token) internal {
+		try IHRC719(token).associate() returns (uint256 responseCode) {
+			uint256 successCode = uint256(int256(HederaResponseCodes.SUCCESS));
+			uint256 alreadyAssociatedCode = uint256(
+				int256(HederaResponseCodes.TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT)
+			);
+			if (
+				responseCode != successCode &&
+				responseCode != alreadyAssociatedCode
+			) {
+				revert TokenAssociationFailed(token, responseCode);
+			}
+		} catch {
+			// Non-HTS ERC20 tokens won't implement HRC-719 and don't need explicit association.
+		}
+	}
+
+	function associateListingTokens() public {
+		Listing memory l = _campaignStorage().listing;
+		_associateTokenIfRequired(l.fundingToken);
+		_associateTokenIfRequired(l.campaignToken);
 	}
 
 	function _getLisitngGToken(

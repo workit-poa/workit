@@ -7,6 +7,7 @@ declare module "next-auth" {
       id: string;
       email: string | null;
       hederaAccountId: string | null;
+      evmAddress: string | null;
       createdAt: string;
     };
   }
@@ -18,6 +19,7 @@ declare module "next-auth/jwt" {
       id: string;
       email: string | null;
       hederaAccountId: string | null;
+      evmAddress: string | null;
       createdAt: string;
     };
   }

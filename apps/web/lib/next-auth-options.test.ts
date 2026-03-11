@@ -34,6 +34,7 @@ test("jwt handles credentials (otp) flow and does not enter oauth provider switc
     id: "user_1",
     email: "user@example.com",
     hederaAccountId: "0.0.12345",
+    evmAddress: null,
     createdAt: "2026-03-01T00:00:00.000Z"
   });
 });

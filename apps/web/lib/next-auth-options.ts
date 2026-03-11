@@ -68,6 +68,41 @@ function encodeErrorRedirect(message: string) {
   return `/auth?error=${encodeURIComponent(message)}`;
 }
 
+function resolveMirrorNodeBaseUrl(): string | null {
+  const configured =
+    process.env.HEDERA_MIRROR_NODE_URL?.trim() ||
+    process.env.HEDERA_MIRROR_REST_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const network = (process.env.HEDERA_NETWORK || "testnet").trim().toLowerCase();
+  if (network === "mainnet") return "https://mainnet-public.mirrornode.hedera.com";
+  if (network === "testnet") return "https://testnet.mirrornode.hedera.com";
+  if (network === "previewnet") return "https://previewnet.mirrornode.hedera.com";
+  return null;
+}
+
+async function resolveEvmAddressFromMirror(hederaAccountId: string | null): Promise<string | null> {
+  if (!hederaAccountId) return null;
+
+  const mirrorBaseUrl = resolveMirrorNodeBaseUrl();
+  if (!mirrorBaseUrl) return null;
+
+  try {
+    const response = await fetch(`${mirrorBaseUrl}/api/v1/accounts/${encodeURIComponent(hederaAccountId)}`, {
+      headers: {
+        accept: "application/json"
+      },
+      cache: "no-store"
+    });
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { evm_address?: unknown };
+    return typeof payload.evm_address === "string" && payload.evm_address.trim().length > 0 ? payload.evm_address : null;
+  } catch {
+    return null;
+  }
+}
+
 export const nextAuthOptions: NextAuthOptions = {
   pages: {
     signIn: "/auth"
@@ -121,10 +156,12 @@ export const nextAuthOptions: NextAuthOptions = {
     },
     async jwt({ token, user, account }) {
       if (account?.type === "credentials" && user) {
+        const hederaAccountId = (user as { hederaAccountId?: string | null }).hederaAccountId ?? null;
         token.workitUser = {
           id: user.id,
           email: user.email ?? null,
-          hederaAccountId: (user as { hederaAccountId?: string | null }).hederaAccountId ?? null,
+          hederaAccountId,
+          evmAddress: await resolveEvmAddressFromMirror(hederaAccountId),
           createdAt: (user as { createdAt?: string }).createdAt ?? new Date().toISOString()
         };
         token.sub = user.id;
@@ -149,16 +186,21 @@ export const nextAuthOptions: NextAuthOptions = {
           id: result.user.id,
           email: result.user.email,
           hederaAccountId: result.user.hederaAccountId,
+          evmAddress: await resolveEvmAddressFromMirror(result.user.hederaAccountId),
           createdAt: result.user.createdAt.toISOString()
         };
         token.sub = result.user.id;
+      }
+
+      if (token.workitUser && token.workitUser.hederaAccountId && !token.workitUser.evmAddress) {
+        token.workitUser.evmAddress = await resolveEvmAddressFromMirror(token.workitUser.hederaAccountId);
       }
 
       return token;
     },
     async session({ session, token }) {
       const workitUser = token.workitUser as
-        | { id: string; email: string | null; hederaAccountId: string | null; createdAt: string }
+        | { id: string; email: string | null; hederaAccountId: string | null; evmAddress: string | null; createdAt: string }
         | undefined;
       if (!workitUser) {
         return session;
@@ -169,6 +211,7 @@ export const nextAuthOptions: NextAuthOptions = {
         id: workitUser.id,
         email: workitUser.email,
         hederaAccountId: workitUser.hederaAccountId,
+        evmAddress: workitUser.evmAddress,
         createdAt: workitUser.createdAt
       };
       return session;

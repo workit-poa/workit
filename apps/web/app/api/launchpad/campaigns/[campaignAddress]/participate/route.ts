@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertSameOrigin } from "../../../../auth/_utils";
-import { participateInCampaign } from "../../../../../../lib/launchpad/server";
+import {
+  participateInCampaign,
+  previewCampaignContribution
+} from "../../../../../../lib/launchpad/server";
 import { requireSessionUser } from "../../../../../../lib/server-auth";
 
 export const runtime = "nodejs";
@@ -20,8 +23,21 @@ export async function POST(
     assertSameOrigin(request);
     const user = await requireSessionUser(request);
     const { campaignAddress } = await context.params;
-    const body = (await request.json()) as { amount?: unknown };
+    const body = (await request.json()) as { amount?: unknown; previewOnly?: unknown };
     const amount = typeof body.amount === "string" ? body.amount : "";
+    const previewOnly = body.previewOnly === true;
+
+    console.log({previewOnly})
+    // if (previewOnly) {
+    //   const preview = await previewCampaignContribution({
+    //     userId: user.id,
+    //     campaignAddress,
+    //     amount
+    //   });
+
+    //   console.log({preview})
+    //   return NextResponse.json({ preview });
+    // }
 
     const result = await participateInCampaign({
       userId: user.id,
@@ -31,6 +47,7 @@ export async function POST(
 
     return NextResponse.json(result);
   } catch (error) {
+    console.trace({error})
     return toErrorResponse(error);
   }
 }

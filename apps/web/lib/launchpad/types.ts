@@ -28,7 +28,31 @@ export interface SponsoredTxResult {
   mirrorLink: string;
 }
 
+export type ContributionUiStage =
+  | "idle"
+  | "checking_balances"
+  | "awaiting_confirmation"
+  | "wrapping_hbar"
+  | "approving_whbar"
+  | "contributing";
+
+export interface CampaignContributionPreview {
+  campaignAddress: string;
+  fundingToken: string;
+  amount: string;
+  amountRaw: string;
+  fundingTokenDecimals: number;
+  usesWhbarFunding: boolean;
+  whbarBalanceRaw: string;
+  nativeHbarBalanceRaw: string;
+  nativeHbarReserveRaw: string;
+  wrapAmountRaw: string;
+  approvalRequired: boolean;
+  allowanceRaw: string;
+}
+
 export interface ParticipateCampaignResult {
+  preview: CampaignContributionPreview;
   campaignAddress: string;
   participantEvmAddress: string;
   amount: string;

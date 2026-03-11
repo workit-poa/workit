@@ -52,6 +52,7 @@ interface ICampaign {
 	error UnauthorizedGToken();
 	error InvalidGTokenSender();
 	error MergeFailed();
+	error TokenAssociationFailed(address token, uint256 responseCode);
 
 	/*//////////////////////////////////////////////////////////////
 	                           EVENTS
@@ -75,6 +76,10 @@ interface ICampaign {
 
 	/// @notice ERC20 contribution
 	function contribute(uint256 amount, address to) external;
+
+	/// @notice Associates this campaign contract with listing tokens when required by HTS.
+	/// @dev Safe to call multiple times.
+	function associateListingTokens() external;
 
 	/*//////////////////////////////////////////////////////////////
 	                      CAMPAIGN ACTIONS
