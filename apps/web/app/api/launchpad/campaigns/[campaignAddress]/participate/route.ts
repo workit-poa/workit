@@ -27,7 +27,6 @@ export async function POST(
     const amount = typeof body.amount === "string" ? body.amount : "";
     const previewOnly = body.previewOnly === true;
 
-    console.log({previewOnly})
     // if (previewOnly) {
     //   const preview = await previewCampaignContribution({
     //     userId: user.id,

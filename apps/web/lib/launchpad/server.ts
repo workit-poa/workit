@@ -1,12 +1,21 @@
 import { getManagedWalletSignerContext } from "@workit-poa/auth";
-import { AccountId, EthereumTransaction, TokenId } from "@hashgraph/sdk";
+import {
+    AccountBalanceQuery,
+    AccountId,
+    EthereumTransaction,
+    TokenAssociateTransaction,
+    TokenId,
+} from "@hashgraph/sdk";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+    addKmsSignatureToFrozenTransaction,
     createHederaClient,
     createHederaJsonRpcProvider,
+    createKmsHederaSigner,
     createKmsClientFromEnv,
     createKmsEvmSigner,
+    executeSignedTransaction,
     mirrorLinkForTransaction,
     parseHederaEvmNetwork,
     signEvmTransactionWithKmsWallet,
@@ -50,11 +59,10 @@ const ERC20_ABI = [
     "function allowance(address owner,address spender) view returns (uint256)",
     "function approve(address spender,uint256 amount) returns (bool)",
 ];
-const WHBAR_ABI = ["function deposit() payable"];
-
 const erc20Interface = new Interface(ERC20_ABI);
-const whbarInterface = new Interface(WHBAR_ABI);
-const TESTNET_WHBAR_ADDRESS = "0x0000000000000000000000000000000000003ad1";
+
+const HBAR_WEI_DECIMALS = 18n;
+const HBAR_TO_WEI_MULTIPLIER = 10n ** (HBAR_WEI_DECIMALS - BigInt(HBAR_DECIMALS));
 const deploymentContractCache = new Map<
     string,
     Promise<ResolvedDeploymentContracts>
@@ -79,6 +87,7 @@ interface SponsoredExecutionResult {
     transactionId: string;
     mirrorLink: string;
 }
+type HederaClient = ReturnType<typeof createHederaClient>;
 
 interface SponsoredExecutionParams {
     paymasterClient: ReturnType<typeof createHederaClient>;
@@ -105,6 +114,8 @@ interface ResolvedDeploymentContracts {
     launchpadAbi: InterfaceAbi;
     campaignAbi: InterfaceAbi;
     campaignInterface: Interface;
+    whbarAddress: string;
+    whbarInterface: Interface;
 }
 
 interface MirrorTokenResponse {
@@ -239,30 +250,6 @@ function resolveMaxGasAllowanceHbar(): string {
     return value;
 }
 
-function resolveWhbarAddress(): string {
-    const configured = process.env.LAUNCHPAD_WHBAR_ADDRESS?.trim();
-    const candidate =
-        configured && configured.length > 0 ? configured : TESTNET_WHBAR_ADDRESS;
-    const network = parseHederaEvmNetwork(process.env.HEDERA_NETWORK);
-    if ((!configured || configured.length === 0) && network !== "testnet") {
-        throw new Error(
-            "LAUNCHPAD_WHBAR_ADDRESS must be configured for non-testnet networks",
-        );
-    }
-    if (isAddress(candidate)) {
-        return getAddress(candidate);
-    }
-
-    try {
-        const solidityHex = TokenId.fromString(candidate).toSolidityAddress();
-        return getAddress(`0x${solidityHex}`);
-    } catch {
-        throw new Error(
-            "LAUNCHPAD_WHBAR_ADDRESS must be a valid EVM address or Hedera token ID",
-        );
-    }
-}
-
 function resolveNativeHbarReserveTinybars(): bigint {
     const value =
         process.env.LAUNCHPAD_NATIVE_HBAR_RESERVE_HBAR?.trim() || "0.05";
@@ -279,8 +266,35 @@ function resolveNativeHbarReserveTinybars(): bigint {
     }
 }
 
-function isWhbarToken(tokenAddress: string): boolean {
-    return getAddress(tokenAddress) === resolveWhbarAddress();
+function tinybarsToWeibar(amountTinybars: bigint): bigint {
+    if (amountTinybars <= 0n) return 0n;
+    return amountTinybars * HBAR_TO_WEI_MULTIPLIER;
+}
+
+function isWhbarToken(tokenAddress: string, whbarAddress: string): boolean {
+    return getAddress(tokenAddress) === getAddress(whbarAddress);
+}
+
+async function resolveFundingTokenAddressForHts(params: {
+    fundingTokenAddress: string;
+    whbarAddress: string;
+    whbarInterface: Interface;
+    provider: JsonRpcProvider;
+}): Promise<string> {
+    if (!isWhbarToken(params.fundingTokenAddress, params.whbarAddress)) {
+        return getAddress(params.fundingTokenAddress);
+    }
+
+    const tokenData = params.whbarInterface.encodeFunctionData("token");
+    const tokenResult = await params.provider.call({
+        to: params.whbarAddress,
+        data: tokenData,
+    });
+    const [underlyingTokenAddress] = params.whbarInterface.decodeFunctionResult(
+        "token",
+        tokenResult,
+    ) as [string];
+    return getAddress(underlyingTokenAddress);
 }
 
 function getStatusLabel(status: CampaignStatusCode): CampaignStatusLabel {
@@ -381,9 +395,10 @@ async function readCampaignSuppliesWithFallback(params: {
 async function getTokenMetadata(
     provider: JsonRpcProvider,
     tokenAddress: string,
+    whbarAddress: string,
 ): Promise<TokenMetadata> {
     const normalizedAddress = getAddress(tokenAddress);
-    const isWhbar = isWhbarToken(normalizedAddress);
+    const isWhbar = isWhbarToken(normalizedAddress, whbarAddress);
     const token = new Contract(normalizedAddress, ERC20_ABI, provider);
     const [metadataFromHts, symbolFromContract, decimalsFromContract] =
         await Promise.all([
@@ -671,35 +686,63 @@ async function getTokenAllowanceFromHts(params: {
 async function executeSponsoredTransaction(
     params: SponsoredExecutionParams,
 ): Promise<SponsoredExecutionResult> {
-    const extractRevertData = (error: unknown): string | null => {
-        const visited = new Set<unknown>();
-        const stack: unknown[] = [error];
+    const toErrorMessage = (error: unknown): string =>
+        error instanceof Error ? error.message : String(error);
+    const isHexData = (value: unknown): value is string =>
+        typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+    const extractRevertData = (error: unknown, depth = 0): string | null => {
+        if (depth > 6 || error == null) return null;
 
-        while (stack.length > 0) {
-            const value = stack.pop();
-            if (!value || typeof value !== "object" || visited.has(value))
-                continue;
-            visited.add(value);
+        if (isHexData(error)) {
+            return error === "0x" ? null : error;
+        }
 
-            const record = value as Record<string, unknown>;
-            const data = record.data;
-            if (
-                typeof data === "string" &&
-                data.startsWith("0x") &&
-                data.length >= 10
-            ) {
-                return data;
+        if (typeof error === "string") {
+            try {
+                return extractRevertData(JSON.parse(error) as unknown, depth + 1);
+            } catch {
+                return null;
             }
+        }
 
-            for (const key of ["error", "info", "cause"]) {
-                if (record[key] !== undefined) stack.push(record[key]);
+        if (typeof error !== "object") return null;
+        const record = error as Record<string, unknown>;
+
+        const direct = record.data;
+        if (isHexData(direct)) {
+            return direct === "0x" ? null : direct;
+        }
+
+        for (const key of ["error", "info", "cause", "value", "result", "response", "receipt"]) {
+            if (record[key] !== undefined) {
+                const nested = extractRevertData(record[key], depth + 1);
+                if (nested) return nested;
+            }
+        }
+
+        if (typeof record.body === "string") {
+            try {
+                const nested = extractRevertData(
+                    JSON.parse(record.body) as unknown,
+                    depth + 1,
+                );
+                if (nested) return nested;
+            } catch {
+                // Ignore invalid JSON payload bodies.
             }
         }
 
         return null;
     };
+    const standardErrorInterface = new Interface([
+        "error Error(string)",
+        "error Panic(uint256)",
+    ]);
     const decodeRevertData = (revertData: string): string => {
-        for (const candidate of params.decodeInterfaces ?? []) {
+        for (const candidate of [
+            ...(params.decodeInterfaces ?? []),
+            standardErrorInterface,
+        ]) {
             try {
                 const parsed = candidate.parseError(revertData);
                 if (parsed) {
@@ -717,29 +760,68 @@ async function executeSponsoredTransaction(
             }
         }
 
-        const selector = revertData.slice(0, 10).toLowerCase();
-        try {
-            if (selector === "0x08c379a0") {
-                const [reason] = new Interface([
-                    "function Error(string)",
-                ]).decodeFunctionData("Error", revertData);
-                return String(reason);
-            }
-            if (selector === "0x4e487b71") {
-                const [panicCode] = new Interface([
-                    "function Panic(uint256)",
-                ]).decodeFunctionData("Panic", revertData);
-                return `Panic(${String(panicCode)})`;
-            }
-        } catch {
-            // Fall through to raw selector output.
-        }
+        // Fall through to raw selector output when no interface can decode it.
         return `revertData=${revertData}`;
+    };
+    const extractReasonText = (error: unknown, depth = 0): string | null => {
+        if (depth > 6 || error == null) return null;
+
+        if (typeof error === "string") {
+            const raw = error.trim();
+            if (!raw) return null;
+            try {
+                const parsed = JSON.parse(raw) as unknown;
+                return extractReasonText(parsed, depth + 1);
+            } catch {
+                const lowered = raw.toLowerCase();
+                const directPrefix = "execution reverted: ";
+                const reasonStringPrefix = "reverted with reason string ";
+                if (lowered.includes(directPrefix)) {
+                    return raw.slice(lowered.indexOf(directPrefix) + directPrefix.length).trim();
+                }
+                if (lowered.includes(reasonStringPrefix)) {
+                    const extracted = raw.slice(
+                        lowered.indexOf(reasonStringPrefix) + reasonStringPrefix.length,
+                    );
+                    return extracted.replace(/^['"]|['"]$/g, "").trim();
+                }
+                if (
+                    lowered.includes("revert") &&
+                    !lowered.includes("contract_revert_executed")
+                ) {
+                    return raw;
+                }
+                return null;
+            }
+        }
+
+        if (typeof error !== "object") return null;
+        const record = error as Record<string, unknown>;
+        for (const key of [
+            "reason",
+            "shortMessage",
+            "message",
+            "error",
+            "info",
+            "cause",
+            "value",
+            "result",
+            "response",
+            "receipt",
+            "body",
+        ]) {
+            if (record[key] === undefined) continue;
+            const nested = extractReasonText(record[key], depth + 1);
+            if (nested) return nested;
+        }
+        return null;
     };
     const decodeRevertFromError = (error: unknown): string | null => {
         const revertData = extractRevertData(error);
-        if (!revertData || revertData === "0x") return null;
-        return decodeRevertData(revertData);
+        if (revertData && revertData !== "0x") {
+            return decodeRevertData(revertData);
+        }
+        return extractReasonText(error);
     };
     const simulateForRevertMessage = async (): Promise<string | null> => {
         try {
@@ -790,14 +872,31 @@ async function executeSponsoredTransaction(
         .setMaxGasAllowanceHbar(resolveMaxGasAllowanceHbar());
 
     const response = await tx.execute(params.paymasterClient as never);
+    const readRecordReason = async (): Promise<string | null> => {
+        const record = await response
+            .getRecord(params.paymasterClient as never)
+            .catch(() => null);
+        const reason = record?.contractFunctionResult?.errorMessage?.trim();
+        return reason && reason.length > 0 ? reason : null;
+    };
     const receipt = await response
         .getReceipt(params.paymasterClient as never)
         .catch(async (error) => {
-            const message =
-                error instanceof Error ? error.message : String(error);
+            const message = toErrorMessage(error);
             if (message.includes("CONTRACT_REVERT_EXECUTED")) {
+                const decodedFromError = decodeRevertFromError(error);
                 const decoded = await simulateForRevertMessage();
-                throw new Error(decoded ?? "CONTRACT_REVERT_EXECUTED");
+                const recordReason = await readRecordReason();
+                throw new Error(
+                    decodedFromError ??
+                        decoded ??
+                        recordReason ??
+                        "CONTRACT_REVERT_EXECUTED",
+                );
+            }
+            const decodedFromError = decodeRevertFromError(error);
+            if (decodedFromError) {
+                throw new Error(decodedFromError);
             }
             throw error;
         });
@@ -806,15 +905,8 @@ async function executeSponsoredTransaction(
 
     if (receiptStatus !== "SUCCESS") {
         const decoded = await simulateForRevertMessage();
-        throw new Error(decoded ?? receiptStatus);
-    }
-
-    const record = await response
-        .getRecord(params.paymasterClient as never)
-        .catch(() => null);
-    const revertReason = record?.contractFunctionResult?.errorMessage?.trim();
-    if (revertReason) {
-        throw new Error(revertReason);
+        const recordReason = await readRecordReason();
+        throw new Error(recordReason ?? decoded ?? receiptStatus);
     }
 
     return {
@@ -837,9 +929,10 @@ async function resolveDeploymentContracts(
     }
 
     const request = (async (): Promise<ResolvedDeploymentContracts> => {
-        const [launchpad, campaign] = await Promise.all([
+        const [launchpad, campaign, whbar] = await Promise.all([
             readDeploymentContractFile(chainId, "Launchpad"),
             readDeploymentContractFile(chainId, "Campaign"),
+            readDeploymentContractFile(chainId, "WHBAR"),
         ]);
 
         return {
@@ -847,6 +940,8 @@ async function resolveDeploymentContracts(
             launchpadAbi: launchpad.abi,
             campaignAbi: campaign.abi,
             campaignInterface: new Interface(campaign.abi),
+            whbarAddress: whbar.address,
+            whbarInterface: new Interface(whbar.abi),
         };
     })();
 
@@ -885,7 +980,7 @@ export async function getLaunchpadCampaigns(): Promise<
 
         if (cached) return cached;
 
-        const request = getTokenMetadata(provider, address);
+        const request = getTokenMetadata(provider, address, contracts.whbarAddress);
         tokenCache.set(address, request);
         return request;
     };
@@ -975,12 +1070,65 @@ export async function getLaunchpadCampaigns(): Promise<
 
 async function resolveCampaignFundingReadContext(params: {
     provider: JsonRpcProvider;
+    hederaClient: HederaClient;
+    whbarAddress: string;
+    whbarInterface: Interface;
     tokenAddress: string;
     campaignAddress: string;
     signerAccountId: string;
     participantEvmAddress: string;
     participantContractAddress: string;
 }): Promise<{ whbarBalance: bigint; nativeHbarBalance: bigint; allowance: bigint }> {
+    if (isWhbarToken(params.tokenAddress, params.whbarAddress)) {
+        const underlyingTokenAddress = await resolveFundingTokenAddressForHts({
+            fundingTokenAddress: params.tokenAddress,
+            provider: params.provider,
+            whbarAddress: params.whbarAddress,
+            whbarInterface: params.whbarInterface,
+        });
+        const whbarTokenIdRaw = await resolveTokenIdFromAddress(
+            getAddress(underlyingTokenAddress),
+        );
+        if (!whbarTokenIdRaw) {
+            throw new Error(
+                `Unable to resolve WHBAR underlying token id for ${underlyingTokenAddress}.`,
+            );
+        }
+        const token = new Contract(underlyingTokenAddress, ERC20_ABI, params.provider);
+
+        const [snapshot, nativeBalance, allowanceForEvmAddressOnChain, allowanceForContractAddressOnChain] =
+            await Promise.all([
+                getHtsTokenBalanceSnapshot({
+                    client: params.hederaClient,
+                    accountId: params.signerAccountId,
+                    tokenId: TokenId.fromString(whbarTokenIdRaw),
+                }),
+                getNativeHbarBalanceTinybars(
+                    params.hederaClient,
+                    params.signerAccountId,
+                ),
+                readTokenAllowance(
+                    token,
+                    params.participantEvmAddress,
+                    params.campaignAddress,
+                ),
+                readTokenAllowance(
+                    token,
+                    params.participantContractAddress,
+                    params.campaignAddress,
+                ),
+            ]);
+
+        return {
+            whbarBalance: snapshot.balance,
+            nativeHbarBalance: nativeBalance,
+            allowance: pickFirstNonNull(
+                allowanceForEvmAddressOnChain,
+                allowanceForContractAddressOnChain,
+            ),
+        };
+    }
+
     const token = new Contract(params.tokenAddress, ERC20_ABI, params.provider);
     const [ownerAccountIdForContractAddress, ownerAccountIdForEvmAddress] =
         await Promise.all([
@@ -1120,7 +1268,9 @@ async function createCampaignContributionContext(params: {
     const fundingTokenDecimals =
         fundingTokenDecimalsFromContract ??
         fundingTokenMetadata?.decimals ??
-        (isWhbarToken(listing.fundingToken) ? HBAR_DECIMALS : 18);
+        (isWhbarToken(listing.fundingToken, contracts.whbarAddress)
+            ? HBAR_DECIMALS
+            : 18);
 
     let amountRaw: bigint;
     try {
@@ -1196,6 +1346,7 @@ async function buildContributionConfig(params: {
             nativeHbarReserveRaw: resolveNativeHbarReserveTinybars(),
             isWhbarFundingToken: isWhbarToken(
                 contributionContext.listing.fundingToken,
+                contributionContext.contracts.whbarAddress,
             ),
         },
         provider: contributionContext.provider,
@@ -1212,6 +1363,8 @@ async function buildContributionConfig(params: {
 
 function createContributionReaders(ctx: {
     provider: JsonRpcProvider;
+    paymasterClient: ReturnType<typeof createHederaClient>;
+    contracts: ResolvedDeploymentContracts;
     listing: CampaignListing;
     config: ContributionConfig;
     signerContext: Awaited<ReturnType<typeof getManagedWalletSignerContext>>;
@@ -1232,6 +1385,9 @@ function createContributionReaders(ctx: {
         if (!snapshotPromise) {
             snapshotPromise = resolveCampaignFundingReadContext({
                 provider: ctx.provider,
+                hederaClient: ctx.paymasterClient,
+                whbarAddress: ctx.contracts.whbarAddress,
+                whbarInterface: ctx.contracts.whbarInterface,
                 tokenAddress: ctx.listing.fundingToken,
                 campaignAddress: ctx.config.campaignAddress,
                 signerAccountId: ctx.signerContext.hederaAccountId,
@@ -1253,6 +1409,83 @@ function createContributionReaders(ctx: {
             (await loadSnapshot()).nativeHbarBalance,
         readAllowance: async () => (await loadSnapshot()).allowance,
     };
+}
+
+
+async function getHtsTokenBalanceSnapshot(params: {
+  client: HederaClient;
+  accountId: string;
+  tokenId: TokenId;
+}): Promise<{ associated: boolean; balance: bigint }> {
+
+  const balance = await new AccountBalanceQuery()
+    .setAccountId(params.accountId)
+    .execute(params.client);
+
+  const tokenIdStr = params.tokenId.toString();
+
+  let associated = false;
+  let balanceTiny = 0n;
+
+  for (const [id, amount] of balance.tokens ?? []) {
+    if (id.toString() === tokenIdStr) {
+      associated = true;
+      balanceTiny = BigInt(amount.toString());
+      break;
+    }
+  }
+
+  return {
+    associated,
+    balance: balanceTiny,
+  };
+}
+
+async function getNativeHbarBalanceTinybars(
+    client: HederaClient,
+    accountId: string,
+): Promise<bigint> {
+    const balance = await new AccountBalanceQuery()
+        .setAccountId(accountId)
+        .execute(client);
+    return BigInt(balance.hbars.toTinybars().toString());
+}
+
+async function ensureTokenAssociationWithKms(params: {
+  hederaClient: HederaClient;
+  hederaAccountId: string;
+  tokenId: TokenId;
+  kms: ReturnType<typeof createKmsClientFromEnv>;
+  kmsKeyId: string;
+}): Promise<string | null> {
+  const snapshot = await getHtsTokenBalanceSnapshot({
+    client: params.hederaClient,
+    accountId: params.hederaAccountId,
+    tokenId: params.tokenId,
+  });
+
+  if (snapshot.associated) {
+    return null;
+  }
+
+  const signer = await createKmsHederaSigner({
+    kms: params.kms,
+    keyId: params.kmsKeyId,
+  });
+
+  let tx = new TokenAssociateTransaction()
+    .setAccountId(AccountId.fromString(params.hederaAccountId))
+    .setTokenIds([params.tokenId]);
+  tx = await tx.freezeWith(params.hederaClient);
+
+  await addKmsSignatureToFrozenTransaction(tx, signer);
+  const { response, receipt } = await executeSignedTransaction(params.hederaClient, tx);
+  const status = receipt.status.toString();
+  if (status !== "SUCCESS" && status !== "TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT") {
+    throw new Error(`Funding token association failed with status: ${status}`);
+  }
+
+  return response.transactionId.toString();
 }
 
 export async function previewCampaignContribution(params: {
@@ -1292,8 +1525,47 @@ export async function participateInCampaign(params: {
             runtime: {
                 reads: createContributionReaders(ctx),
                 writes: {
+                    associateFundingToken: async () => {
+                        const tokenAddressToAssociate =
+                            await resolveFundingTokenAddressForHts({
+                                fundingTokenAddress: ctx.listing.fundingToken,
+                                provider: ctx.provider,
+                                whbarAddress: ctx.contracts.whbarAddress,
+                                whbarInterface: ctx.contracts.whbarInterface,
+                            });
+
+                        const tokenIdRaw = await resolveTokenIdFromAddress(
+                            tokenAddressToAssociate,
+                        );
+                        if (!tokenIdRaw) {
+                            throw new Error(
+                                `Unable to resolve funding token ID for association (token address: ${tokenAddressToAssociate}).`,
+                            );
+                        }
+
+                        const transactionId = await ensureTokenAssociationWithKms({
+                            hederaClient: ctx.paymasterClient,
+                            hederaAccountId: ctx.signerContext.hederaAccountId,
+                            tokenId: TokenId.fromString(tokenIdRaw),
+                            kms: ctx.kms,
+                            kmsKeyId: ctx.signerContext.kmsKeyId,
+                        });
+
+                        if (!transactionId) {
+                            return null;
+                        }
+                        return {
+                            type: "associate",
+                            transactionId,
+                            mirrorLink: mirrorLinkForTransaction(
+                                ctx.hederaNetwork,
+                                transactionId,
+                            ),
+                        };
+                    },
                     wrapHbar: async (amount) => {
-                        const wrapData = whbarInterface.encodeFunctionData("deposit");
+                        const wrapData =
+                            ctx.contracts.whbarInterface.encodeFunctionData("deposit()");
                         const wrapResult = await executeSponsoredTransaction({
                             paymasterClient: ctx.paymasterClient,
                             hederaNetwork: ctx.hederaNetwork,
@@ -1302,10 +1574,11 @@ export async function participateInCampaign(params: {
                             provider: ctx.provider,
                             nonce,
                             from: ctx.participantEvmAddress,
-                            to: ctx.listing.fundingToken,
+                            to: ctx.contracts.whbarAddress,
                             data: wrapData,
                             gasLimit: 180_000n,
-                            value: amount,
+                            // WHBAR amount math uses tinybars (8dp), but EVM tx value is wei (18dp).
+                            value: tinybarsToWeibar(amount),
                         });
                         nonce += 1;
                         return {
@@ -1315,6 +1588,13 @@ export async function participateInCampaign(params: {
                         };
                     },
                     approveFundingToken: async (amount) => {
+                        const tokenAddressToApprove =
+                            await resolveFundingTokenAddressForHts({
+                                fundingTokenAddress: ctx.listing.fundingToken,
+                                provider: ctx.provider,
+                                whbarAddress: ctx.contracts.whbarAddress,
+                                whbarInterface: ctx.contracts.whbarInterface,
+                            });
                         const approveData = erc20Interface.encodeFunctionData("approve", [
                             ctx.config.campaignAddress,
                             amount,
@@ -1327,7 +1607,7 @@ export async function participateInCampaign(params: {
                             provider: ctx.provider,
                             nonce,
                             from: ctx.participantEvmAddress,
-                            to: ctx.listing.fundingToken,
+                            to: tokenAddressToApprove,
                             data: approveData,
                             gasLimit: 150_000n,
                             decodeInterfaces: [erc20Interface],

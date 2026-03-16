@@ -1,4 +1,3 @@
-import { MaxUint256 } from "ethers";
 import type {
   CampaignContributionPreview,
   SponsoredTxResult,
@@ -24,6 +23,7 @@ export interface ContributionReads {
 }
 
 export interface ContributionWrites {
+  associateFundingToken?: () => Promise<SponsoredTxResult | null>;
   wrapHbar: (amount: bigint) => Promise<SponsoredTxResult>;
   approveFundingToken: (amount: bigint) => Promise<SponsoredTxResult>;
   contribute: (amount: bigint, recipient: string) => Promise<SponsoredTxResult>;
@@ -93,7 +93,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 export function classifyContributionError(params: {
-  stage: "check" | "wrap" | "approve" | "contribute";
+  stage: "check" | "associate" | "wrap" | "approve" | "contribute";
   error: unknown;
 }): Error {
   const message = toErrorMessage(params.error);
@@ -106,6 +106,9 @@ export function classifyContributionError(params: {
     return new Error("Transaction rejected by user.");
   }
 
+  if (params.stage === "associate") {
+    return new Error(`WHBAR association failed: ${message}`);
+  }
   if (params.stage === "wrap") {
     return new Error(`WHBAR deposit failed: ${message}`);
   }
@@ -116,6 +119,29 @@ export function classifyContributionError(params: {
     return new Error(`Campaign contribution failed: ${message}`);
   }
   return new Error(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function pollUntil(params: {
+  read: () => Promise<bigint>;
+  target: bigint;
+  attempts?: number;
+  delayMs?: number;
+}): Promise<bigint> {
+  const attempts = params.attempts ?? 8;
+  const delayMs = params.delayMs ?? 300;
+  let latest = await params.read();
+  if (latest >= params.target) return latest;
+
+  for (let i = 1; i < attempts; i += 1) {
+    await sleep(delayMs);
+    latest = await params.read();
+    if (latest >= params.target) return latest;
+  }
+  return latest;
 }
 
 export async function prepareCampaignContribution(params: {
@@ -131,8 +157,6 @@ export async function prepareCampaignContribution(params: {
     params.reads.readNativeHbarBalance(),
     params.reads.readAllowance(),
   ]);
-
-  console.log({whbarBalance,nativeHbarBalance,allowance})
 
   const preview = buildContributionPreview({
     config: params.config,
@@ -168,6 +192,17 @@ export async function executeCampaignContribution(params: {
   if (preview.usesWhbarFunding) {
     const wrapAmount = BigInt(preview.wrapAmountRaw);
     if (wrapAmount > 0n) {
+      if (params.runtime.writes.associateFundingToken) {
+        try {
+          const associationTx = await params.runtime.writes.associateFundingToken();
+          if (associationTx) {
+            transactions.push(associationTx);
+          }
+        } catch (error) {
+          throw classifyContributionError({ stage: "associate", error });
+        }
+      }
+
       try {
         transactions.push(await params.runtime.writes.wrapHbar(wrapAmount));
       } catch (error) {
@@ -176,7 +211,10 @@ export async function executeCampaignContribution(params: {
     }
 
     // Re-read to guard against stale state before contribution execution.
-    const whbarBalance = await params.runtime.reads.readWhbarBalance();
+    const whbarBalance = await pollUntil({
+      read: params.runtime.reads.readWhbarBalance,
+      target: params.config.amountRaw,
+    });
     if (whbarBalance < params.config.amountRaw) {
       throw new Error(
         `WHBAR balance is insufficient after wrapping. Need ${params.config.amountRaw.toString()}, have ${whbarBalance.toString()}.`,
@@ -187,13 +225,16 @@ export async function executeCampaignContribution(params: {
   const allowanceBeforeApprove = await params.runtime.reads.readAllowance();
   if (isApprovalNeeded({ allowance: allowanceBeforeApprove, requiredAmount: params.config.amountRaw })) {
     try {
-      transactions.push(await params.runtime.writes.approveFundingToken(MaxUint256));
+      transactions.push(await params.runtime.writes.approveFundingToken(params.config.amountRaw));
     } catch (error) {
       throw classifyContributionError({ stage: "approve", error });
     }
   }
 
-  const finalAllowance = await params.runtime.reads.readAllowance();
+  const finalAllowance = await pollUntil({
+    read: params.runtime.reads.readAllowance,
+    target: params.config.amountRaw,
+  });
   if (finalAllowance < params.config.amountRaw) {
     throw new Error(
       `Funding token allowance is insufficient. Need ${params.config.amountRaw.toString()}, have ${finalAllowance.toString()}.`,

@@ -42,6 +42,14 @@ function createRuntime(params: {
       readAllowance: async () => allowance
     },
     writes: {
+      associateFundingToken: async () => {
+        calls.push("associate");
+        return {
+          type: "associate",
+          transactionId: "associate-tx",
+          mirrorLink: "https://example.com/associate"
+        };
+      },
       wrapHbar: async amount => {
         calls.push(`wrap:${amount.toString()}`);
         whbarBalance += amount;
@@ -109,9 +117,9 @@ test("partial WHBAR wraps shortfall then approves then contributes", async () =>
 
   const result = await executeCampaignContribution({ config, runtime });
 
-  assert.deepEqual(calls, ["wrap:75000000", "approve", "contribute:100000000"]);
+  assert.deepEqual(calls, ["associate", "wrap:75000000", "approve", "contribute:100000000"]);
   assert.equal(result.preview.wrapAmountRaw, "75000000");
-  assert.equal(result.transactions.length, 3);
+  assert.equal(result.transactions.length, 4);
 });
 
 test("zero WHBAR wraps full amount then contributes", async () => {
@@ -124,7 +132,7 @@ test("zero WHBAR wraps full amount then contributes", async () => {
 
   await executeCampaignContribution({ config, runtime });
 
-  assert.deepEqual(calls, ["wrap:100000000", "contribute:100000000"]);
+  assert.deepEqual(calls, ["associate", "wrap:100000000", "contribute:100000000"]);
 });
 
 test("insufficient native HBAR fails preflight", async () => {

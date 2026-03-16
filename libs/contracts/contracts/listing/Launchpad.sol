@@ -32,6 +32,8 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 
 	uint256 public constant MAX_LOCK_EPOCHS = 1080;
 	uint256 public constant MIN_LOCK_EPOCHS = 90;
+	bytes4 private constant WRAPPED_TOKEN_SELECTOR =
+		bytes4(keccak256("token()"));
 
 	address public override factory;
 	address private _gToken;
@@ -116,6 +118,19 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 		}
 	}
 
+	function _resolveErc20Token(address token) internal view returns (address) {
+		(bool ok, bytes memory data) = token.staticcall(
+			abi.encodeWithSelector(WRAPPED_TOKEN_SELECTOR)
+		);
+		if (ok && data.length >= 32) {
+			address underlying = abi.decode(data, (address));
+			if (underlying != address(0) && underlying != token) {
+				return underlying;
+			}
+		}
+		return token;
+	}
+
 	/*//////////////////////////////////////////////////////////////
 	                     SFT MINT/BURN LOGIC
 	//////////////////////////////////////////////////////////////*/
@@ -150,20 +165,21 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 			revert PairAlreadyDeployed(address(campaign), existingPair);
 
 		ICampaign.Listing memory listing = campaign.listing();
+		address fundingToken = campaign.fundingErc20Token();
 
 		address pair = UniswapV2Library.pairFor(
 			factory,
 			listing.campaignToken,
-			listing.fundingToken
+			fundingToken
 		);
 		address createdPair = IUniswapV2Factory(factory).createPair(
 			listing.campaignToken,
-			listing.fundingToken
+			fundingToken
 		);
 		if (createdPair == address(0) || createdPair != pair)
 			revert PairDeploymentFailed(
 				listing.campaignToken,
-				listing.fundingToken
+				fundingToken
 			);
 
 		campaignPair[address(campaign)] = createdPair;
@@ -184,6 +200,7 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 		ICampaign.Listing memory listing,
 		uint256 campaignTokenSupply
 	) internal view {
+		address fundingToken = _resolveErc20Token(listing.fundingToken);
 		if (listing.campaignToken == address(0))
 			revert ZeroCampaignToken(listing.campaignToken);
 		if (campaignTokenSupply == 0)
@@ -207,15 +224,15 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 			);
 
 		address pair = IUniswapV2Factory(factory).getPair(
-			listing.fundingToken,
+			fundingToken,
 			listing.campaignToken
 		);
-		address campaign = campaignByTokens[listing.fundingToken][
+		address campaign = campaignByTokens[fundingToken][
 			listing.campaignToken
 		];
 		if (pair != address(0) || campaign != address(0))
 			revert PoolOrCampaignExists(
-				listing.fundingToken,
+				fundingToken,
 				listing.campaignToken,
 				pair,
 				campaign
@@ -242,6 +259,11 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 		_validateListing(listing, campaignTokenSupply);
 
 		(address campaign, ) = _createCampaign(msg.sender, _gToken, listing);
+		address fundingToken = ICampaign(campaign).fundingErc20Token();
+		if (fundingToken != listing.fundingToken) {
+			campaignByTokens[fundingToken][listing.campaignToken] = campaign;
+			campaignByTokens[listing.campaignToken][fundingToken] = campaign;
+		}
 		ICampaign(campaign).associateListingTokens();
 
 		IERC20(listing.campaignToken).safeTransferFrom(

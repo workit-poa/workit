@@ -24,6 +24,9 @@ import {CampaignLib} from "./CampaignLib.sol";
 contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 	using GTokenLib for IGToken.Attributes;
 
+	bytes4 private constant WRAPPED_TOKEN_SELECTOR =
+		bytes4(keccak256("token()"));
+
 	/*//////////////////////////////////////////////////////////////
 	                           TYPES
 	//////////////////////////////////////////////////////////////*/
@@ -94,13 +97,31 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 		emit ContributionMade(user, amount);
 	}
 
+	function _resolveErc20Token(address token) internal view returns (address) {
+		(bool ok, bytes memory data) = token.staticcall(
+			abi.encodeWithSelector(WRAPPED_TOKEN_SELECTOR)
+		);
+		if (ok && data.length >= 32) {
+			address underlying = abi.decode(data, (address));
+			if (underlying != address(0) && underlying != token) {
+				return underlying;
+			}
+		}
+		return token;
+	}
+
+	function _fundingErc20Token() internal view returns (address) {
+		return _resolveErc20Token(_listing.fundingToken);
+	}
+
 	function contribute(
 		uint256 amount,
 		address to
 	) external notExpired inStatus(Status.Funding) {
-		_associateTokenIfRequired(_listing.fundingToken);
+		address fundingToken = _fundingErc20Token();
+		_associateTokenIfRequired(fundingToken);
 
-		IERC20(_listing.fundingToken).transferFrom(
+		IERC20(fundingToken).transferFrom(
 			msg.sender,
 			address(this),
 			amount
@@ -128,7 +149,7 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 
 	function associateListingTokens() public {
 		Listing memory l = _listing;
-		_associateTokenIfRequired(l.fundingToken);
+		_associateTokenIfRequired(_resolveErc20Token(l.fundingToken));
 		_associateTokenIfRequired(l.campaignToken);
 	}
 
@@ -213,7 +234,7 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 		if (status != Status.Failed) revert CampaignNotFailed(status);
 
 		ILaunchpad(_launchpad).burn(msg.sender, contribution);
-		IERC20(_listing.fundingToken).transfer(to, contribution);
+		IERC20(_fundingErc20Token()).transfer(to, contribution);
 	}
 
 	function deployPair() public inStatus(Status.Funding) {
@@ -227,14 +248,15 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 			revert GoalNotReached(listing_.goal, fundingSupply());
 
 		address launchpad = _launchpad;
+		address fundingToken = _fundingErc20Token();
 		address pair = UniswapV2Library.pairFor(
 			ILaunchpad(launchpad).factory(),
 			listing_.campaignToken,
-			listing_.fundingToken
+			fundingToken
 		);
 
 		IERC20(listing_.campaignToken).transfer(pair, campaignSupply());
-		IERC20(listing_.fundingToken).transfer(pair, fundingSupply());
+		IERC20(fundingToken).transfer(pair, fundingSupply());
 
 		ILaunchpad(launchpad).deployPair();
 
@@ -401,7 +423,7 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 	//////////////////////////////////////////////////////////////*/
 
 	function fundingSupply() public view returns (uint256) {
-		return IERC20(_listing.fundingToken).balanceOf(address(this));
+		return IERC20(_fundingErc20Token()).balanceOf(address(this));
 	}
 
 	function campaignSupply() public view returns (uint256) {
@@ -410,5 +432,9 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 
 	function listing() public view returns (Listing memory) {
 		return _listing;
+	}
+
+	function fundingErc20Token() public view override returns (address) {
+		return _fundingErc20Token();
 	}
 }

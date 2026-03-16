@@ -23,7 +23,7 @@ export interface LaunchpadCampaignView {
 }
 
 export interface SponsoredTxResult {
-  type: "wrap_hbar" | "approve" | "contribute";
+  type: "associate" | "wrap_hbar" | "approve" | "contribute";
   transactionId: string;
   mirrorLink: string;
 }

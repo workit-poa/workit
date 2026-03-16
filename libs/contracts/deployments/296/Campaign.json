@@ -1,5 +1,5 @@
 {
-  "address": "0xD68820CFb6f1FF90Ec29A2739A41B03b1CD56892",
+  "address": "0x17d1771610B86f9089aEE827925461Db90c24056",
   "abi": [
     {
       "inputs": [
@@ -524,6 +524,19 @@
       "name": "deployPair",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "fundingErc20Token",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {

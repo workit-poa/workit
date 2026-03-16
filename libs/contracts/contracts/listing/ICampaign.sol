@@ -98,6 +98,9 @@ interface ICampaign {
 
 	function listing() external view returns (Listing memory);
 
+	/// @notice Effective ERC20 token used for funding transfers (resolves wrappers like WHBAR to underlying HTS token).
+	function fundingErc20Token() external view returns (address);
+
 	function fundingSupply() external view returns (uint256);
 
 	function campaignSupply() external view returns (uint256);

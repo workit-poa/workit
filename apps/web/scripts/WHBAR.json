@@ -1,0 +1,97 @@
+[
+    {
+        "type": "constructor",
+        "stateMutability": "undefined",
+        "payable": false,
+        "inputs": []
+    },
+    {
+        "type": "event",
+        "anonymous": false,
+        "name": "Deposit",
+        "inputs": [
+            { "type": "address", "name": "src", "indexed": true },
+            { "type": "address", "name": "dst", "indexed": true },
+            { "type": "uint256", "name": "wad", "indexed": false }
+        ]
+    },
+    {
+        "type": "event",
+        "anonymous": false,
+        "name": "Transfer",
+        "inputs": [
+            { "type": "address", "name": "from", "indexed": true },
+            { "type": "address", "name": "to", "indexed": true },
+            { "type": "uint64", "name": "value", "indexed": false }
+        ]
+    },
+    {
+        "type": "event",
+        "anonymous": false,
+        "name": "Withdrawal",
+        "inputs": [
+            { "type": "address", "name": "src", "indexed": true },
+            { "type": "address", "name": "dst", "indexed": true },
+            { "type": "uint256", "name": "wad", "indexed": false }
+        ]
+    },
+    {
+        "type": "function",
+        "name": "deposit",
+        "constant": false,
+        "stateMutability": "payable",
+        "payable": true,
+        "inputs": [],
+        "outputs": []
+    },
+    {
+        "type": "function",
+        "name": "deposit",
+        "constant": false,
+        "stateMutability": "payable",
+        "payable": true,
+        "inputs": [
+            { "type": "address", "name": "src" },
+            { "type": "address", "name": "dst" }
+        ],
+        "outputs": []
+    },
+    {
+        "type": "function",
+        "name": "tinycentsToTinybars",
+        "constant": false,
+        "payable": false,
+        "inputs": [{ "type": "uint256", "name": "tinycents" }],
+        "outputs": [{ "type": "uint256", "name": "tinybars" }]
+    },
+    {
+        "type": "function",
+        "name": "token",
+        "constant": true,
+        "stateMutability": "view",
+        "payable": false,
+        "inputs": [],
+        "outputs": [{ "type": "address", "name": "" }]
+    },
+    {
+        "type": "function",
+        "name": "withdraw",
+        "constant": false,
+        "payable": false,
+        "inputs": [{ "type": "uint256", "name": "wad" }],
+        "outputs": []
+    },
+    {
+        "type": "function",
+        "name": "withdraw",
+        "constant": false,
+        "payable": false,
+        "inputs": [
+            { "type": "address", "name": "src" },
+            { "type": "address", "name": "dst" },
+            { "type": "uint256", "name": "wad" }
+        ],
+        "outputs": []
+    },
+    { "type": "receive", "stateMutability": "payable" }
+]
