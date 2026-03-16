@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ethers, upgrades } from "hardhat";
+import { ethers } from "hardhat";
 
 describe("WorkEmissionController", function () {
 	async function deployControllerFixture() {
@@ -7,23 +7,12 @@ describe("WorkEmissionController", function () {
 		const controllerFactory = await ethers.getContractFactory(
 			"WorkEmissionController",
 		);
-		const deployedProxy = await upgrades.deployProxy(
-			controllerFactory,
-			[owner.address],
-			{
-				initializer: "initialize",
-				kind: "uups",
-			},
-		);
-		await deployedProxy.waitForDeployment();
-
-		const controller = controllerFactory.attach(
-			await deployedProxy.getAddress(),
-		) as any;
+		const controller = (await controllerFactory.deploy(owner.address)) as any;
+		await controller.waitForDeployment();
 		return { owner, other, controller };
 	}
 
-	it("initializes ownership and epoch defaults through proxy", async function () {
+	it("sets ownership and epoch defaults in constructor", async function () {
 		const { owner, controller } = await deployControllerFixture();
 
 		expect(await controller.owner()).to.equal(owner.address);

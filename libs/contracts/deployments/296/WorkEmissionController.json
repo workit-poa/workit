@@ -1,42 +1,16 @@
 {
-  "address": "0x8dDBED24B58eF39936d746f7ccCB9bdADdF108F6",
+  "address": "0xB1905ded5064F1BACF436dB77e0dF6c4F350f1aa",
   "abi": [
     {
-      "inputs": [],
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "initialOwner",
+          "type": "address"
+        }
+      ],
       "stateMutability": "nonpayable",
       "type": "constructor"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "target",
-          "type": "address"
-        }
-      ],
-      "name": "AddressEmptyCode",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "implementation",
-          "type": "address"
-        }
-      ],
-      "name": "ERC1967InvalidImplementation",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "ERC1967NonPayable",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "FailedCall",
-      "type": "error"
     },
     {
       "inputs": [
@@ -66,11 +40,6 @@
       "type": "error"
     },
     {
-      "inputs": [],
-      "name": "InvalidInitialization",
-      "type": "error"
-    },
-    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -89,11 +58,6 @@
         }
       ],
       "name": "MaxSupplyExceeded",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NotInitializing",
       "type": "error"
     },
     {
@@ -218,22 +182,6 @@
     },
     {
       "inputs": [],
-      "name": "UUPSUnauthorizedCallContext",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "slot",
-          "type": "bytes32"
-        }
-      ],
-      "name": "UUPSUnsupportedProxiableUUID",
-      "type": "error"
-    },
-    {
-      "inputs": [],
       "name": "WorkTokenAlreadyCreated",
       "type": "error"
     },
@@ -265,19 +213,6 @@
         }
       ],
       "name": "EmissionGenerated",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
-          "internalType": "uint64",
-          "name": "version",
-          "type": "uint64"
-        }
-      ],
-      "name": "Initialized",
       "type": "event"
     },
     {
@@ -341,19 +276,6 @@
         }
       ],
       "name": "StakingRewardsDispatched",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "implementation",
-          "type": "address"
-        }
-      ],
-      "name": "Upgraded",
       "type": "event"
     },
     {
@@ -469,19 +391,6 @@
       "type": "event"
     },
     {
-      "inputs": [],
-      "name": "UPGRADE_INTERFACE_VERSION",
-      "outputs": [
-        {
-          "internalType": "string",
-          "name": "",
-          "type": "string"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -544,31 +453,24 @@
       "name": "entityFunds",
       "outputs": [
         {
-          "components": [
-            {
-              "internalType": "uint256",
-              "name": "team",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "growth",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "staking",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "liqIncentive",
-              "type": "uint256"
-            }
-          ],
-          "internalType": "struct Entities.Value",
-          "name": "",
-          "type": "tuple"
+          "internalType": "uint256",
+          "name": "team",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "growth",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "staking",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "liqIncentive",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",
@@ -579,37 +481,17 @@
       "name": "epochs",
       "outputs": [
         {
-          "components": [
-            {
-              "internalType": "uint256",
-              "name": "genesis",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "epochLength",
-              "type": "uint256"
-            }
-          ],
-          "internalType": "struct Epochs.Storage",
-          "name": "",
-          "type": "tuple"
+          "internalType": "uint256",
+          "name": "genesis",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "epochLength",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "initialOwner",
-          "type": "address"
-        }
-      ],
-      "name": "initialize",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -640,19 +522,6 @@
           "internalType": "address",
           "name": "",
           "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "proxiableUUID",
-      "outputs": [
-        {
-          "internalType": "bytes32",
-          "name": "",
-          "type": "bytes32"
         }
       ],
       "stateMutability": "view",
@@ -700,7 +569,7 @@
       "inputs": [
         {
           "internalType": "address",
-          "name": "_rewards",
+          "name": "rewards_",
           "type": "address"
         }
       ],
@@ -746,24 +615,6 @@
       "name": "transferOwnership",
       "outputs": [],
       "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "newImplementation",
-          "type": "address"
-        },
-        {
-          "internalType": "bytes",
-          "name": "data",
-          "type": "bytes"
-        }
-      ],
-      "name": "upgradeToAndCall",
-      "outputs": [],
-      "stateMutability": "payable",
       "type": "function"
     },
     {

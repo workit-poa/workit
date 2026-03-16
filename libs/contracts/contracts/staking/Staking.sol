@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IERC1155} from "@openzeppelin/contracts/interfaces/IERC1155.sol";
 
@@ -19,56 +18,33 @@ import {Math} from "../libraries/Math.sol";
 import {GTokenLib} from "../tokens/GToken/GTokenLib.sol";
 import {IStaking} from "./IStaking.sol";
 
-contract Staking is IStaking, Initializable, OwnableUpgradeable {
+contract Staking is IStaking, Ownable {
 	using GTokenLib for IGToken.Attributes;
 	using Epochs for Epochs.Storage;
 
-	/*//////////////////////////////////////////////////////////////
-	                            STORAGE
-	//////////////////////////////////////////////////////////////*/
-	/// @custom:storage-location erc7201:workit.contracts.staking.Staking
-	struct StakingStorage {
-		address factory;
-		address router;
-		address rewards;
-		address workToken;
-		address gToken;
-		Epochs.Storage epochs;
-		mapping(address => uint256) collectedPairLiqFees;
-	}
+	address private _factory;
+	address private _router;
+	address public override rewards;
+	address public override workToken;
+	address public override gToken;
+	Epochs.Storage private _epochs;
+	mapping(address => uint256) private _collectedPairLiqFees;
 
-	// keccak256("workit.contracts.staking.Staking") & ~bytes32(uint256(0xff))
-	bytes32 internal constant STAKING_STORAGE_LOCATION =
-		0x773a49547f02e2e52c5aae1b0d90edf09bb5da1b06a4edcd76d4bb3a0cff0c00;
-
-	function _stakingStorage() private pure returns (StakingStorage storage $) {
-		bytes32 slot = STAKING_STORAGE_LOCATION;
-		assembly {
-			$.slot := slot
-		}
-	}
-
-	/*//////////////////////////////////////////////////////////////
-	                         INITIALIZATION
-	//////////////////////////////////////////////////////////////*/
-	function initialize(
+	constructor(
 		address router,
 		address rewards_,
 		address workToken_,
 		address gToken_
-	) external initializer {
+	) Ownable(msg.sender) {
 		if (router == address(0) || rewards_ == address(0)) revert ZeroAmount();
 		if (workToken_ == address(0) || gToken_ == address(0)) revert InvalidToken();
 
-		__Ownable_init(msg.sender);
-
-		StakingStorage storage $ = _stakingStorage();
-		$.router = router;
-		$.factory = IUniswapV2Router(router).factory();
-		$.rewards = rewards_;
-		$.workToken = workToken_;
-		$.gToken = gToken_;
-		$.epochs = IGToken(gToken_).epochs();
+		_router = router;
+		_factory = IUniswapV2Router(router).factory();
+		rewards = rewards_;
+		workToken = workToken_;
+		gToken = gToken_;
+		_epochs = IGToken(gToken_).epochs();
 	}
 
 	/*//////////////////////////////////////////////////////////////
@@ -85,18 +61,17 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		address tokenA,
 		address tokenB
 	) internal view {
-		address work = _stakingStorage().workToken;
+		address work = workToken;
 		if (tokenA != work && tokenB != work) revert InvalidToken();
 	}
 
 	function _validatedPairTokens(
 		address pair
 	) internal view returns (address token0, address token1) {
-		StakingStorage storage $ = _stakingStorage();
 		token0 = IUniswapV2Pair(pair).token0();
 		token1 = IUniswapV2Pair(pair).token1();
 
-		address expectedPair = IUniswapV2Factory($.factory).getPair(token0, token1);
+		address expectedPair = IUniswapV2Factory(_factory).getPair(token0, token1);
 		if (expectedPair == address(0)) revert PairNotFound();
 		if (expectedPair != pair) revert InvalidPair();
 
@@ -109,9 +84,9 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 	) internal view returns (uint256 value) {
 		(address token0, address token1) = _validatedPairTokens(pair);
 		(uint256 amount0, uint256 amount1) = UniswapV2LiquidityMathLibrary
-			.getLiquidityValue(_stakingStorage().factory, token0, token1, liquidity);
+			.getLiquidityValue(_factory, token0, token1, liquidity);
 
-		address work = _stakingStorage().workToken;
+		address work = workToken;
 		value = token0 == work ? amount0 : amount1;
 		if (value == 0) revert InsufficientLiquidity();
 	}
@@ -126,9 +101,9 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		(liqInfo.token0, liqInfo.token1) = _validatedPairTokens(liqInfo.pair);
 		liqInfo.liqValue = _wrkLiquidityValue(liqInfo.pair, liqInfo.liquidity);
 
-		uint256 nonce = IGToken(_stakingStorage().gToken).mintGToken(
+		uint256 nonce = IGToken(gToken).mintGToken(
 			to,
-			IRewards(_stakingStorage().rewards).rewardPerShare(),
+			IRewards(rewards).rewardPerShare(),
 			epochsLocked,
 			liqInfo
 		);
@@ -154,14 +129,13 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		if (tokenA == tokenB) revert InvalidToken();
 		_requirePairContainsWork(tokenA, tokenB);
 
-		StakingStorage storage $ = _stakingStorage();
-		liqInfo.pair = IUniswapV2Factory($.factory).getPair(tokenA, tokenB);
+		liqInfo.pair = IUniswapV2Factory(_factory).getPair(tokenA, tokenB);
 		if (liqInfo.pair == address(0)) revert PairNotFound();
 
-		IERC20(tokenA).approve($.router, amountADesired);
-		IERC20(tokenB).approve($.router, amountBDesired);
+		IERC20(tokenA).approve(_router, amountADesired);
+		IERC20(tokenB).approve(_router, amountBDesired);
 
-		(uint256 amountA, uint256 amountB, uint256 liquidity) = IUniswapV2Router($.router)
+		(uint256 amountA, uint256 amountB, uint256 liquidity) = IUniswapV2Router(_router)
 			.addLiquidity(
 				tokenA,
 				tokenB,
@@ -287,14 +261,13 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		uint256 amountIn,
 		uint256 minOut
 	) private returns (uint256 amountOut) {
-		StakingStorage storage $ = _stakingStorage();
-		IERC20(tokenIn).approve($.router, amountIn);
+		IERC20(tokenIn).approve(_router, amountIn);
 
 		address[] memory path = new address[](2);
 		path[0] = tokenIn;
 		path[1] = tokenOut;
 
-		uint256[] memory amounts = IUniswapV2Router($.router).swapExactTokensForTokens(
+		uint256[] memory amounts = IUniswapV2Router(_router).swapExactTokensForTokens(
 			amountIn,
 			minOut,
 			path,
@@ -359,12 +332,11 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 			uint256 liqFee
 		)
 	{
-		StakingStorage storage $ = _stakingStorage();
 		uint256 liquidity = attr.lpDetails.liquidity;
 
 		liquidityToReturn = attr.epochsLocked == 0
 			? liquidity
-			: attr.valueToKeep(liquidity, $.epochs.currentEpoch());
+			: attr.valueToKeep(liquidity, _epochs.currentEpoch());
 
 		if (liquidityToReturn < liquidity) {
 			liqFee = liquidity - liquidityToReturn;
@@ -395,8 +367,7 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 			nonces.length != amounts1Min.length
 		) revert InvalidInputLengths();
 
-		StakingStorage storage $ = _stakingStorage();
-		IGToken gToken_ = IGToken($.gToken);
+		IGToken gToken_ = IGToken(gToken);
 
 		liquidities = new uint256[](nonces.length);
 		adjusted0Min = new uint256[](nonces.length);
@@ -453,9 +424,8 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 			nonces.length != amounts1Min.length
 		) revert InvalidInputLengths();
 
-		StakingStorage storage $ = _stakingStorage();
-		IRewards($.rewards).claimRewards(nonces, to);
-		IGToken gToken_ = IGToken($.gToken);
+		IRewards(rewards).claimRewards(nonces, to);
+		IGToken gToken_ = IGToken(gToken);
 
 		for (uint256 i; i < nonces.length; ++i) {
 			uint256 nonce = nonces[i];
@@ -469,7 +439,7 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 				uint256 liqFee
 			) = _computeEarlyUnlockPenalty(attr, amounts0Min[i], amounts1Min[i]);
 
-			$.collectedPairLiqFees[attr.lpDetails.pair] += liqFee;
+			_collectedPairLiqFees[attr.lpDetails.pair] += liqFee;
 			if (liqFee > 0) {
 				emit EarlyUnlockPenalty(msg.sender, attr.lpDetails.pair, liqFee);
 				emit ProtocolLiquidityFeeCollected(attr.lpDetails.pair, liqFee);
@@ -481,7 +451,7 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 				liquidity,
 				amount0MinAdjusted,
 				amount1MinAdjusted,
-				$.router
+				_router
 			);
 		}
 	}
@@ -494,7 +464,7 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		for (uint256 i; i < nonces.length; ++i) {
 			owners[i] = owner;
 		}
-		amounts = IERC1155(_stakingStorage().gToken).balanceOfBatch(owners, nonces);
+		amounts = IERC1155(gToken).balanceOfBatch(owners, nonces);
 	}
 
 	function unStake(
@@ -514,7 +484,7 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 		bytes memory data = abi.encode(amounts0Min, amounts1Min, to);
 		uint256[] memory balances = _nonceBalances(msg.sender, nonces);
 
-		IERC1155(_stakingStorage().gToken).safeBatchTransferFrom(
+		IERC1155(gToken).safeBatchTransferFrom(
 			msg.sender,
 			address(this),
 			nonces,
@@ -524,7 +494,7 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 	}
 
 	modifier onlyGToken() {
-		if (msg.sender != address(_stakingStorage().gToken)) {
+		if (msg.sender != address(gToken)) {
 			revert UnauthorizedGToken();
 		}
 		_;
@@ -608,15 +578,4 @@ contract Staking is IStaking, Initializable, OwnableUpgradeable {
 	                               VIEWS
 	//////////////////////////////////////////////////////////////*/
 
-	function rewards() public view override returns (address) {
-		return _stakingStorage().rewards;
-	}
-
-	function workToken() public view override returns (address) {
-		return _stakingStorage().workToken;
-	}
-
-	function gToken() public view override returns (address) {
-		return _stakingStorage().gToken;
-	}
 }

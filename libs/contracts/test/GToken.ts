@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ethers, upgrades } from "hardhat";
+import { ethers } from "hardhat";
 
 const HTS_PRECOMPILE = "0x0000000000000000000000000000000000000167";
 const EPOCH_LENGTH = 24 * 60 * 60;
@@ -29,17 +29,8 @@ describe("GToken", function () {
 		const hts = await installMockHTS();
 
 		const factory = await ethers.getContractFactory("GToken");
-		const deployedProxy = await upgrades.deployProxy(
-			factory,
-			[owner.address, EPOCH_LENGTH],
-			{
-				initializer: "initialize",
-				kind: "uups",
-			},
-		);
-		await deployedProxy.waitForDeployment();
-
-		const gToken = factory.attach(await deployedProxy.getAddress()) as any;
+		const gToken = (await factory.deploy(owner.address, EPOCH_LENGTH)) as any;
+		await gToken.waitForDeployment();
 		return { owner, alice, bob, carol, hts, gToken };
 	}
 
@@ -59,7 +50,7 @@ describe("GToken", function () {
 		};
 	}
 
-	it("initializes with a single initializer and UUPS roles", async function () {
+	it("sets constructor roles and epoch configuration", async function () {
 		const { owner, gToken } = await deployFixture();
 
 		expect(await gToken.name()).to.equal("WorkIt Governance Token");
@@ -82,10 +73,6 @@ describe("GToken", function () {
 		const epochs = await gToken.epochs();
 		expect(epochs.epochLength).to.equal(BigInt(EPOCH_LENGTH));
 		expect(epochs.genesis).to.be.gt(0n);
-
-		await expect(
-			gToken.initialize(owner.address, EPOCH_LENGTH),
-		).to.be.reverted;
 	});
 
 	it("creates and associates the HTS position NFT token", async function () {
@@ -296,27 +283,4 @@ describe("GToken", function () {
 			.withArgs(23);
 	});
 
-	it("restricts UUPS upgrades to default admin", async function () {
-		const { owner, alice, gToken } = await deployFixture();
-
-		const gTokenV2Factory = await ethers.getContractFactory("GTokenV2");
-
-		await expect(
-			upgrades.upgradeProxy(
-				await gToken.getAddress(),
-				gTokenV2Factory.connect(alice),
-			),
-		).to.be.reverted;
-
-		const upgraded = await upgrades.upgradeProxy(
-			await gToken.getAddress(),
-			gTokenV2Factory.connect(owner),
-		);
-		await upgraded.waitForDeployment();
-
-		const upgradedContract = gTokenV2Factory.attach(
-			await upgraded.getAddress(),
-		) as any;
-		expect(await upgradedContract.version()).to.equal(2n);
-	});
 });

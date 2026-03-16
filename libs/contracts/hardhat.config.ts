@@ -1,6 +1,5 @@
 import { HardhatUserConfig, task } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
-import "@openzeppelin/hardhat-upgrades";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -87,17 +86,33 @@ task("hedera:ping", "Ping JSON-RPC relay using eth_chainId and eth_blockNumber")
 const config: HardhatUserConfig = {
   defaultNetwork,
   solidity: {
-    version: "0.8.28",
-    settings: {
-      evmVersion: "cancun",
-      optimizer: {
-        enabled: true,
-        runs: 200,
+    compilers: [
+      {
+        version: "0.8.28",
+        settings: {
+          evmVersion: "cancun",
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
+      },
+    ],
+    overrides: {
+      "contracts/listing/Launchpad.sol": {
+        version: "0.8.28",
+        settings: {
+          evmVersion: "cancun",
+          viaIR: true,
+          optimizer: {
+            enabled: true,
+            runs: 1,
+          },
+        },
       },
     },
   },
   networks: {
-    hardhat: {},
     hederaLocal: {
       url: process.env.HEDERA_LOCAL_RPC_URL || HEDERA_RPC_DEFAULTS.local,
       chainId: HEDERA_CHAIN_IDS.local,

@@ -3,14 +3,13 @@ pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IERC1155} from "@openzeppelin/contracts/interfaces/IERC1155.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC1155Receiver} from "@openzeppelin/contracts/interfaces/IERC1155Receiver.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IHRC719} from "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHRC719.sol";
 import {HederaResponseCodes} from "@hashgraph/smart-contracts/contracts/system-contracts/HederaResponseCodes.sol";
 
 import {ILaunchpad} from "./ILaunchpad.sol";
-import {Launchpad} from "./Launchpad.sol";
 import {ICampaign} from "./ICampaign.sol";
 import {IGToken} from "../tokens/GToken/IGToken.sol";
 import {ISFT} from "../abstracts/ISFT.sol";
@@ -22,44 +21,23 @@ import {UniswapV2Library} from "../libraries/UniswapV2Library.sol";
 import {CampaignLib} from "./CampaignLib.sol";
 
 /// @notice Campaign contract for liquidity / pair launch funding
-contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
+contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 	using GTokenLib for IGToken.Attributes;
 
 	/*//////////////////////////////////////////////////////////////
 	                           TYPES
 	//////////////////////////////////////////////////////////////*/
 
-	/// @custom:storage-location erc7201:workit.contracts.listing.Campaign
-	struct CampaignStorage {
-		address launchpad;
-		address gToken;
-		Status status;
-		Listing listing;
-	}
+	address private _launchpad;
+	address private _gToken;
+	Status public override status;
+	Listing private _listing;
 
-	/*//////////////////////////////////////////////////////////////
-	                       ERC-7201 STORAGE
-	//////////////////////////////////////////////////////////////*/
-
-	// keccak256("workit.contracts.listing.Campaign") & ~bytes32(uint256(0xff))
-	bytes32 internal constant CAMPAIGN_STORAGE_LOCATION =
-		0xa4955760aaa83777c8c17bdf4c3e664a0aca921e84a3064328444ba0bd380400;
-
-	function _campaignStorage()
-		internal
-		pure
-		returns (CampaignStorage storage $)
-	{
-		assembly {
-			$.slot := CAMPAIGN_STORAGE_LOCATION
-		}
-	}
-
-	function initialize(
+	constructor(
 		address launchpad_,
 		address gToken_,
 		Listing memory listing_
-	) external initializer {
+	) Ownable(msg.sender) {
 		// --- basic infra checks ---
 		if (launchpad_ == address(0)) revert ZeroLaunchpad(launchpad_);
 		if (gToken_ == address(0)) revert ZeroGToken(gToken_);
@@ -78,14 +56,10 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 				listing_.campaignToken
 			);
 
-		__Ownable_init(msg.sender);
-
-		CampaignStorage storage $ = _campaignStorage();
-
-		$.launchpad = launchpad_;
-		$.gToken = gToken_;
-		$.listing = listing_;
-		$.status = Status.Pending;
+		_launchpad = launchpad_;
+		_gToken = gToken_;
+		_listing = listing_;
+		status = Status.Pending;
 
 		associateListingTokens();
 	}
@@ -95,15 +69,14 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	//////////////////////////////////////////////////////////////*/
 
 	modifier notExpired() {
-		uint256 deadline = listing().deadline;
+		uint256 deadline = _listing.deadline;
 		if (block.timestamp > deadline)
 			revert CampaignExpired(deadline, block.timestamp);
 		_;
 	}
 
 	modifier inStatus(Status expected) {
-		CampaignStorage storage $ = _campaignStorage();
-		if ($.status != expected) revert InvalidStatus(expected, $.status);
+		if (status != expected) revert InvalidStatus(expected, status);
 		_;
 	}
 
@@ -125,16 +98,15 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		uint256 amount,
 		address to
 	) external notExpired inStatus(Status.Funding) {
-		CampaignStorage storage $ = _campaignStorage();
-		_associateTokenIfRequired($.listing.fundingToken);
+		_associateTokenIfRequired(_listing.fundingToken);
 
-		IERC20($.listing.fundingToken).transferFrom(
+		IERC20(_listing.fundingToken).transferFrom(
 			msg.sender,
 			address(this),
 			amount
 		);
 
-		_contribute(amount, to, $.launchpad);
+		_contribute(amount, to, _launchpad);
 	}
 
 	function _associateTokenIfRequired(address token) internal {
@@ -155,7 +127,7 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	}
 
 	function associateListingTokens() public {
-		Listing memory l = _campaignStorage().listing;
+		Listing memory l = _listing;
 		_associateTokenIfRequired(l.fundingToken);
 		_associateTokenIfRequired(l.campaignToken);
 	}
@@ -178,27 +150,25 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	) internal returns (uint256 gTokenNonce, uint256 userLiqShare) {
 		if (contribution == 0) revert ZeroContribution(contribution);
 
-		CampaignStorage storage $ = _campaignStorage();
-
 		// Campaign must be completed successfully
-		if (block.timestamp < $.listing.deadline)
-			revert CampaignNotEnded($.listing.deadline, block.timestamp);
-		if ($.status != Status.Success) revert CampaignNotSuccess($.status);
+		if (block.timestamp < _listing.deadline)
+			revert CampaignNotEnded(_listing.deadline, block.timestamp);
+		if (status != Status.Success) revert CampaignNotSuccess(status);
 
 		/* The check for contributionBal > 0 and the successfull
 		 * burn of contribution from msg.sender is suffcient to ensure
 		 * contribution <= contribution bal since in ILaunchpad.burn
 		 * balanceOf(msg.sender, tokenID(this)) >= 0 contribution is checked
 		 */
-		uint256 contributionBal = ILaunchpad($.launchpad).tokenBalance(
+		uint256 contributionBal = ILaunchpad(_launchpad).tokenBalance(
 			CampaignLib.tokenId(address(this))
 		);
 		if (contributionBal == 0) revert ContributionsDrained(contributionBal);
 		// Burn claim token
-		ILaunchpad($.launchpad).burn(msg.sender, contribution);
+		ILaunchpad(_launchpad).burn(msg.sender, contribution);
 
 		IGToken.Balance memory gTokenBalance = _getLisitngGToken(
-			IGToken($.gToken)
+			IGToken(_gToken)
 		);
 		if (gTokenBalance.amount == 0) revert NoLiquidity(gTokenBalance.amount);
 
@@ -215,7 +185,7 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		recipients[0] = to;
 		portions[0] = userLiqShare;
 
-		(, uint256[] memory splitIds) = ISFT($.gToken).splitTransferFrom(
+		(, uint256[] memory splitIds) = ISFT(_gToken).splitTransferFrom(
 			address(this),
 			gTokenBalance.nonce,
 			recipients,
@@ -228,61 +198,57 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	function _refund(uint256 contribution, address to) internal {
 		if (contribution == 0) revert ZeroContribution(contribution);
 
-		CampaignStorage storage $ = _campaignStorage();
-
-		if (block.timestamp < $.listing.deadline)
-			revert CampaignNotEnded($.listing.deadline, block.timestamp);
+		if (block.timestamp < _listing.deadline)
+			revert CampaignNotEnded(_listing.deadline, block.timestamp);
 
 		// Resolve status lazily
-		if ($.status == Status.Funding) {
-			if (fundingSupply() < $.listing.goal) {
-				$.status = Status.Failed;
+		if (status == Status.Funding) {
+			if (fundingSupply() < _listing.goal) {
+				status = Status.Failed;
 			} else {
-				revert CampaignSucceeded(fundingSupply(), $.listing.goal);
+				revert CampaignSucceeded(fundingSupply(), _listing.goal);
 			}
 		}
 
-		if ($.status != Status.Failed) revert CampaignNotFailed($.status);
+		if (status != Status.Failed) revert CampaignNotFailed(status);
 
-		ILaunchpad($.launchpad).burn(msg.sender, contribution);
-		IERC20($.listing.fundingToken).transfer(to, contribution);
+		ILaunchpad(_launchpad).burn(msg.sender, contribution);
+		IERC20(_listing.fundingToken).transfer(to, contribution);
 	}
 
 	function deployPair() public inStatus(Status.Funding) {
-		CampaignStorage storage $ = _campaignStorage();
-		Listing memory _listing = $.listing;
+		Listing memory listing_ = _listing;
 
-		if (block.timestamp < _listing.deadline) {
-			revert CampaignNotEnded(_listing.deadline, block.timestamp);
+		if (block.timestamp < listing_.deadline) {
+			revert CampaignNotEnded(listing_.deadline, block.timestamp);
 		}
 
-		if (_listing.goal == 0 || fundingSupply() < _listing.goal)
-			revert GoalNotReached(_listing.goal, fundingSupply());
+		if (listing_.goal == 0 || fundingSupply() < listing_.goal)
+			revert GoalNotReached(listing_.goal, fundingSupply());
 
-		address launchpad = $.launchpad;
+		address launchpad = _launchpad;
 		address pair = UniswapV2Library.pairFor(
-			Launchpad(launchpad).factory(),
-			_listing.campaignToken,
-			_listing.fundingToken
+			ILaunchpad(launchpad).factory(),
+			listing_.campaignToken,
+			listing_.fundingToken
 		);
 
-		IERC20(_listing.campaignToken).transfer(pair, campaignSupply());
-		IERC20(_listing.fundingToken).transfer(pair, fundingSupply());
+		IERC20(listing_.campaignToken).transfer(pair, campaignSupply());
+		IERC20(listing_.fundingToken).transfer(pair, fundingSupply());
 
 		ILaunchpad(launchpad).deployPair();
 
-		$.status = Status.Success;
+		status = Status.Success;
 	}
 
 	function _resolveFromFunding() internal returns (Status) {
-		CampaignStorage storage $ = _campaignStorage();
-		Listing memory _listing = $.listing;
+		Listing memory listing_ = _listing;
 
-		if (block.timestamp < _listing.deadline) {
-			return $.status;
+		if (block.timestamp < listing_.deadline) {
+			return status;
 		}
 
-		if (fundingSupply() >= _listing.goal) {
+		if (fundingSupply() >= listing_.goal) {
 			deployPair();
 			return Status.Success;
 		}
@@ -291,21 +257,13 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	}
 
 	function resolveCampaign(address to) external onlyOwner returns (Status) {
-		CampaignStorage storage $ = _campaignStorage();
-		Status currentStatus = $.status;
+		Status currentStatus = status;
 
 		if (currentStatus == Status.Pending) {
-			uint256 securityCount = ILaunchpad($.launchpad)
-				.getSecurityGTokens(address(this))
-				.length;
 			uint256 campaignTokens = campaignSupply();
-			bool hasRequiredSecurity =
-				securityCount > 0 ||
-				!ILaunchpad($.launchpad).campaignRequiresSecurity(address(this));
-			if (!hasRequiredSecurity || campaignTokens == 0)
-				revert MissingCampaignTokens(securityCount, campaignTokens);
-			$.status = Status.Funding;
-			return $.status;
+			if (campaignTokens == 0) revert MissingCampaignTokens(campaignTokens);
+			status = Status.Funding;
+			return status;
 		}
 
 		if (to == address(0)) revert ZeroAddress(to);
@@ -318,20 +276,18 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		bool isFinalStatus = _nS == Status.Success || _nS == Status.Failed;
 		if (!isFinalStatus) revert InvalidFinalStatus(_nS);
 
-		Listing memory _listing = $.listing;
-
-		ILaunchpad($.launchpad).returnSecurityGTokens(to);
+		Listing memory listing_ = _listing;
 
 		// Refund campaign tokens on failure
 		if (_nS == Status.Failed) {
 			uint256 campaignFunds = campaignSupply();
 			if (campaignFunds > 0) {
-				IERC20(_listing.campaignToken).transfer(to, campaignFunds);
+				IERC20(listing_.campaignToken).transfer(to, campaignFunds);
 			}
 		}
 
-		$.status = _nS;
-		return $.status;
+		status = _nS;
+		return status;
 	}
 
 	function redeemContribution(
@@ -352,7 +308,7 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
     //////////////////////////////////////////////////////////////*/
 
 	modifier onlyGToken() {
-		if (msg.sender != _campaignStorage().gToken)
+		if (msg.sender != _gToken)
 			revert UnauthorizedGToken();
 		_;
 	}
@@ -392,9 +348,8 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	/// @dev Merge ALL listing GTokens held by this contract, ignoring security nonces and other nonces by reverting.
 	///      Uses FIFO discovery for the "anchor" nonce.
 	function _tryMergeListingGTokens() internal {
-		CampaignStorage storage $ = _campaignStorage();
-		IGToken gToken = IGToken($.gToken);
-		Listing memory l = $.listing;
+		IGToken gToken = IGToken(_gToken);
+		Listing memory l = _listing;
 
 		IGToken.Balance[] memory balances = gToken.getBalance(address(this));
 		if (balances.length == 0) return;
@@ -429,7 +384,7 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 		// Merge all into one nonce held by this contract
 		// We do strict revert on failure.
 		try
-			ISFT($.gToken).mergeTransferFrom(
+			ISFT(_gToken).mergeTransferFrom(
 				address(this),
 				address(this),
 				mergeIds
@@ -445,19 +400,15 @@ contract Campaign is ICampaign, OwnableUpgradeable, IERC1155Receiver {
 	                      VIEW HELPERS
 	//////////////////////////////////////////////////////////////*/
 
-	function status() public view returns (Status) {
-		return _campaignStorage().status;
-	}
-
 	function fundingSupply() public view returns (uint256) {
-		return IERC20(listing().fundingToken).balanceOf(address(this));
+		return IERC20(_listing.fundingToken).balanceOf(address(this));
 	}
 
 	function campaignSupply() public view returns (uint256) {
-		return IERC20(listing().campaignToken).balanceOf(address(this));
+		return IERC20(_listing.campaignToken).balanceOf(address(this));
 	}
 
 	function listing() public view returns (Listing memory) {
-		return _campaignStorage().listing;
+		return _listing;
 	}
 }

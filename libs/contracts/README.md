@@ -86,20 +86,19 @@ pnpm --filter @workit-poa/contracts deploy:mainnet
 `deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://localhost:7546`).
 Deploy flow:
 
-1. Deploy `WorkEmissionController` UUPS proxy.
+1. Deploy `WorkEmissionController`.
 2. Create WRK HTS fungible token from the controller.
-3. Deploy `GToken` UUPS proxy (`initialize(admin, epochLength)`).
+3. Deploy `GToken` (`constructor(admin, epochLength)`).
 4. Create position NFT token via `createPositionNft(maxSupply, name, symbol, memo)`.
 5. Optionally associate accounts from `POSITION_NFT_ASSOCIATE_ACCOUNTS`.
-6. Deploy/init `Rewards` (or reuse `WORK_REWARDS_ADDRESS`).
+6. Deploy `Rewards` via constructor (or reuse `WORK_REWARDS_ADDRESS`).
 7. Grant `GToken.UPDATE_ROLE` to `Rewards`.
 8. Set controller staking collector (`WORK_STAKING_ADDRESS` or rewards address).
-9. Deploy `Staking`.
+9. Deploy `Staking` via constructor.
 10. Grant `GToken.MINTER_ROLE` to `Staking`.
-11. Deploy `Campaign` beacon.
-12. Deploy/init `Launchpad`.
-13. Prepare token approvals.
-14. Create WRK/HBAR campaign (funding token uses WHBAR on-chain).
+11. Deploy `Launchpad` via constructor.
+12. Prepare token approvals.
+13. Create WRK/HBAR campaign (funding token uses WHBAR on-chain).
 
 After each successful deploy, the script also writes a deployment ABI library:
 

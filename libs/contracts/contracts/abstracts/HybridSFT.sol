@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
@@ -14,7 +13,7 @@ import {HederaResponseCodes} from "@hashgraph/smart-contracts/contracts/system-c
 
 import {ISFT} from "./ISFT.sol";
 
-abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
+abstract contract HybridSFT is AccessControl, ISFT {
 	using EnumerableSet for EnumerableSet.UintSet;
 
 	bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
@@ -23,25 +22,17 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 	address internal constant HTS_PRECOMPILE = address(0x167);
 	IHederaTokenService internal constant hts = IHederaTokenService(HTS_PRECOMPILE);
 
-	/// @custom:storage-location erc7201:workit.contracts.abstracts.SFT
-	struct SFTStorage {
-		uint256 nonceCounter;
-		mapping(uint256 => bytes) tokenAttributes;
-		mapping(address => EnumerableSet.UintSet) addressToNonces;
-		/** DEPRECATED */
-		mapping(address => bool) updateOperators;
-		string name;
-		string symbol;
-		address positionNftToken;
-		uint256 positionNftSupply;
-		mapping(uint256 => uint256) positionValue;
-		mapping(uint256 => address) nonceOwners;
-		mapping(address => mapping(address => bool)) operatorApprovals;
-	}
-
-	// keccak256("workit.contracts.abstracts.SFT") & ~bytes32(uint256(0xff))
-	bytes32 private constant SFT_STORAGE_LOCATION =
-		0xc3fbed7a77c5006ede129c3fa1ba7eda8fd7f4309e200a8479dd4bc2bec21100;
+	uint256 private _nonceCounter;
+	mapping(uint256 => bytes) public getRawTokenAttributes;
+	mapping(address => EnumerableSet.UintSet) private _addressToNonces;
+	mapping(address => bool) private _updateOperators;
+	string public name;
+	string public symbol;
+	address public positionNftToken;
+	uint256 public positionNftSupply;
+	mapping(uint256 => uint256) public positionValueOf;
+	mapping(uint256 => address) public getPositionOwner;
+	mapping(address => mapping(address => bool)) public override isApprovedForAll;
 
 	error PositionNftAlreadyCreated();
 	error PositionNftNotCreated();
@@ -53,32 +44,15 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 	error ZeroBalanceToken();
 	error InvalidMetadata();
 
-	function _getSFTStorage() private pure returns (SFTStorage storage s) {
-		assembly {
-			s.slot := SFT_STORAGE_LOCATION
-		}
-	}
-
-	function __SFT_init(
+	constructor(
 		string memory name_,
 		string memory symbol_,
 		address admin
-	) public onlyInitializing {
-		__HybridSFT_init(name_, symbol_, admin);
-	}
-
-	function __HybridSFT_init(
-		string memory name_,
-		string memory symbol_,
-		address admin
-	) internal onlyInitializing {
-		__AccessControl_init();
+	) {
 		require(admin != address(0), "SFT: admin is zero");
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
-
-		SFTStorage storage $ = _getSFTStorage();
-		$.name = name_;
-		$.symbol = symbol_;
+		name = name_;
+		symbol = symbol_;
 	}
 
 	function createPositionNft(
@@ -94,8 +68,7 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 	{
 		if (maxSupply == 0) revert InvalidMetadata();
 
-		SFTStorage storage $ = _getSFTStorage();
-		if ($.positionNftToken != address(0)) {
+		if (positionNftToken != address(0)) {
 			revert PositionNftAlreadyCreated();
 		}
 
@@ -129,7 +102,7 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 			.createNonFungibleToken{value: msg.value}(token);
 		_requireSuccess(responseCode);
 
-		$.positionNftToken = createdToken;
+		positionNftToken = createdToken;
 
 		emit PositionNftCreated(
 			createdToken,
@@ -170,17 +143,16 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		address operator = _msgSender();
 		_validateSplitInputs(from, operator, recipients, values);
 
-		SFTStorage storage $ = _getSFTStorage();
-		if ($.nonceOwners[id] != from) {
+				if (getPositionOwner[id] != from) {
 			revert ERC1155InsufficientBalance(from, 0, 0, id);
 		}
 
-		uint256 fullBalance = $.positionValue[id];
+		uint256 fullBalance = positionValueOf[id];
 		if (fullBalance == 0) {
 			revert ERC1155InsufficientBalance(from, 0, 0, id);
 		}
 
-		bytes memory originalAttr = getRawTokenAttributes(id);
+		bytes memory originalAttr = getRawTokenAttributes[id];
 		uint256 totalSplit;
 		(totalSplit, splitIds) = _processTokenSplits(
 			from,
@@ -192,7 +164,6 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		);
 
 		finalNonce = _applySplitResidual(
-			$,
 			from,
 			id,
 			fullBalance,
@@ -214,18 +185,17 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 
 		_checkAuthorized(from, operator);
 
-		SFTStorage storage $ = _getSFTStorage();
-		bytes memory mergedAttributes;
+				bytes memory mergedAttributes;
 		uint256 totalAmount;
 
 		for (uint256 i = ids.length; i > 0; ) {
 			nonce = ids[i - 1];
-			if ($.nonceOwners[nonce] != from) revert ZeroBalanceToken();
+			if (getPositionOwner[nonce] != from) revert ZeroBalanceToken();
 
-			uint256 value = $.positionValue[nonce];
+			uint256 value = positionValueOf[nonce];
 			if (value == 0) revert ZeroBalanceToken();
 
-			bytes memory attr = $.tokenAttributes[nonce];
+			bytes memory attr = getRawTokenAttributes[nonce];
 			_ensureCanTransfer(nonce, from, to, attr);
 
 			if (totalAmount == 0) {
@@ -263,20 +233,13 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 			revert ERC1155InvalidApprover(_msgSender());
 		}
 
-		_getSFTStorage().operatorApprovals[owner][operator] = approved;
+		isApprovedForAll[owner][operator] = approved;
 		emit ApprovalForAll(owner, operator, approved);
 		emit OperatorApproved(owner, operator, approved, _msgSender());
 	}
 
 	function setApprovalForAll(address operator, bool approved) public {
 		approveOperator(_msgSender(), operator, approved);
-	}
-
-	function isApprovedForAll(
-		address account,
-		address operator
-	) public view returns (bool) {
-		return _getSFTStorage().operatorApprovals[account][operator];
 	}
 
 	function safeTransferFrom(
@@ -337,12 +300,11 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		address account,
 		uint256 id
 	) public view returns (uint256) {
-		SFTStorage storage $ = _getSFTStorage();
-		if ($.nonceOwners[id] != account) {
+		if (getPositionOwner[id] != account) {
 			return 0;
 		}
 
-		return $.positionValue[id];
+		return positionValueOf[id];
 	}
 
 	function balanceOfBatch(
@@ -359,42 +321,12 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		}
 	}
 
-	function positionNftToken() public view returns (address) {
-		return _getSFTStorage().positionNftToken;
-	}
-
-	function positionNftSupply() public view returns (uint256) {
-		return _getSFTStorage().positionNftSupply;
-	}
-
-	function positionValueOf(uint256 nonce) public view returns (uint256) {
-		return _getSFTStorage().positionValue[nonce];
-	}
-
-	function getPositionOwner(uint256 nonce) public view returns (address) {
-		return _getSFTStorage().nonceOwners[nonce];
-	}
-
 	function decimals() public pure virtual returns (uint8) {
 		return 18;
 	}
 
-	function name() public view returns (string memory) {
-		return _getSFTStorage().name;
-	}
-
-	function symbol() public view returns (string memory) {
-		return _getSFTStorage().symbol;
-	}
-
 	function getNonces(address owner) public view returns (uint256[] memory) {
-		return _getSFTStorage().addressToNonces[owner].values();
-	}
-
-	function getRawTokenAttributes(
-		uint256 nonce
-	) public view returns (bytes memory) {
-		return _getSFTStorage().tokenAttributes[nonce];
+		return _addressToNonces[owner].values();
 	}
 
 	function _sftBalance(
@@ -407,8 +339,8 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 			uint256 nonce = nonces[i];
 			balances[i] = SftBalance({
 				nonce: nonce,
-				amount: _getSFTStorage().positionValue[nonce],
-				attributes: getRawTokenAttributes(nonce)
+				amount: positionValueOf[nonce],
+				attributes: getRawTokenAttributes[nonce]
 			});
 		}
 	}
@@ -421,8 +353,7 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		if (to == address(0)) revert InvalidRecipient();
 		if (value == 0 || attributes.length == 0) revert InvalidMetadata();
 
-		SFTStorage storage $ = _getSFTStorage();
-		address tokenAddress = _positionNftToken();
+				address tokenAddress = _positionNftToken();
 
 		bytes[] memory metadata = new bytes[](1);
 		metadata[0] = _positionMintMetadata(attributes, value);
@@ -436,25 +367,24 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		_requireSuccess(responseCode);
 
 		nonce = _toUint256(serialNumbers[0]);
-		if (nonce > $.nonceCounter) {
-			$.nonceCounter = nonce;
+		if (nonce > _nonceCounter) {
+			_nonceCounter = nonce;
 		}
 
-		$.positionNftSupply = _toUint256(newTotalSupply);
-		_setRawTokenAttributes($, nonce, attributes);
-		$.positionValue[nonce] = value;
-		$.nonceOwners[nonce] = to;
-		$.addressToNonces[to].add(nonce);
+		positionNftSupply = _toUint256(newTotalSupply);
+		_setRawTokenAttributes(nonce, attributes);
+		positionValueOf[nonce] = value;
+		getPositionOwner[nonce] = to;
+		_addressToNonces[to].add(nonce);
 
 		_updateHook(nonce, address(0), to, value, attributes);
 		emit PositionMinted(_msgSender(), to, nonce, value, block.timestamp);
 	}
 
 	function _burnPosition(uint256 nonce) internal {
-		SFTStorage storage $ = _getSFTStorage();
-		address owner = $.nonceOwners[nonce];
-		uint256 value = $.positionValue[nonce];
-		bytes memory attributes = $.tokenAttributes[nonce];
+		address owner = getPositionOwner[nonce];
+		uint256 value = positionValueOf[nonce];
+		bytes memory attributes = getRawTokenAttributes[nonce];
 		if (owner == address(0) || value == 0) {
 			revert ZeroBalanceToken();
 		}
@@ -482,11 +412,11 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		);
 		_requireSuccess(responseCode);
 
-		$.positionNftSupply = _toUint256(newTotalSupply);
-		$.addressToNonces[owner].remove(nonce);
-		delete $.tokenAttributes[nonce];
-		delete $.positionValue[nonce];
-		delete $.nonceOwners[nonce];
+		positionNftSupply = _toUint256(newTotalSupply);
+		_addressToNonces[owner].remove(nonce);
+		delete getRawTokenAttributes[nonce];
+		delete positionValueOf[nonce];
+		delete getPositionOwner[nonce];
 
 		_updateHook(nonce, owner, address(0), value, attributes);
 		emit PositionBurned(_msgSender(), owner, nonce, value, block.timestamp);
@@ -497,10 +427,10 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		uint256 nonce,
 		bytes memory attr
 	) internal {
-		if (_getSFTStorage().nonceOwners[nonce] != user) {
+		if (getPositionOwner[nonce] != user) {
 			revert("SFT: No balance found at nonce");
 		}
-		_setRawTokenAttributes(_getSFTStorage(), nonce, attr);
+		_setRawTokenAttributes(nonce, attr);
 	}
 
 	function _transferPosition(
@@ -510,12 +440,11 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 	) private returns (uint256 value) {
 		if (to == address(0)) revert ERC1155InvalidReceiver(to);
 
-		SFTStorage storage $ = _getSFTStorage();
-		if ($.nonceOwners[nonce] != from) {
-			revert ERC1155InsufficientBalance(from, 0, $.positionValue[nonce], nonce);
+				if (getPositionOwner[nonce] != from) {
+			revert ERC1155InsufficientBalance(from, 0, positionValueOf[nonce], nonce);
 		}
 
-		bytes memory attr = $.tokenAttributes[nonce];
+		bytes memory attr = getRawTokenAttributes[nonce];
 		_ensureCanTransfer(nonce, from, to, attr);
 
 		int64 responseCode = hts.transferNFT(
@@ -526,11 +455,11 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		);
 		_requireSuccess(responseCode);
 
-		$.addressToNonces[from].remove(nonce);
-		$.addressToNonces[to].add(nonce);
-		$.nonceOwners[nonce] = to;
+		_addressToNonces[from].remove(nonce);
+		_addressToNonces[to].add(nonce);
+		getPositionOwner[nonce] = to;
 
-		value = $.positionValue[nonce];
+		value = positionValueOf[nonce];
 		_updateHook(nonce, from, to, value, attr);
 		emit PositionTransferred(_msgSender(), from, to, nonce, value, block.timestamp);
 	}
@@ -547,7 +476,7 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 						block.chainid,
 						attributes,
 						value,
-						_getSFTStorage().nonceCounter
+						_nonceCounter
 					)
 				)
 			);
@@ -609,7 +538,6 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 	}
 
 	function _applySplitResidual(
-		SFTStorage storage $,
 		address from,
 		uint256 id,
 		uint256 fullBalance,
@@ -623,8 +551,8 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 				fullBalance,
 				originalAttr
 			);
-			_setRawTokenAttributes($, id, residualAttr);
-			$.positionValue[id] = remaining;
+			_setRawTokenAttributes(id, residualAttr);
+			positionValueOf[id] = remaining;
 
 			bytes memory splitAttr = _intoParts(
 				totalSplit,
@@ -639,13 +567,9 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		return 0;
 	}
 
-	function _setRawTokenAttributes(
-		SFTStorage storage $,
-		uint256 nonce,
-		bytes memory attr
-	) private {
+	function _setRawTokenAttributes(uint256 nonce, bytes memory attr) private {
 		require(attr.length > 0, "SFT: empty attributes not allowed");
-		$.tokenAttributes[nonce] = attr;
+		getRawTokenAttributes[nonce] = attr;
 		emit TokenAttributesUpdated(nonce, attr);
 	}
 
@@ -653,14 +577,14 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		if (
 			from != operator &&
 			!hasRole(TRANSFER_ROLE, operator) &&
-			!isApprovedForAll(from, operator)
+			!isApprovedForAll[from][operator]
 		) {
 			revert ERC1155MissingApprovalForAll(operator, from);
 		}
 	}
 
 	function _positionNftToken() internal view returns (address tokenAddress) {
-		tokenAddress = _getSFTStorage().positionNftToken;
+		tokenAddress = positionNftToken;
 		if (tokenAddress == address(0)) {
 			revert PositionNftNotCreated();
 		}
@@ -750,7 +674,7 @@ abstract contract HybridSFT is Initializable, AccessControlUpgradeable, ISFT {
 		public
 		view
 		virtual
-		override(AccessControlUpgradeable, IERC165)
+		override(AccessControl, IERC165)
 		returns (bool)
 	{
 		return

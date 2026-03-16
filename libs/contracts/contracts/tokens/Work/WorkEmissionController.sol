@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {Epochs} from "../../libraries/Epochs.sol";
@@ -16,42 +14,21 @@ import {HederaResponseCodes} from "@hashgraph/smart-contracts/contracts/system-c
 /**
  * @title WorkEmissionController
  * @notice Hedera-native emission controller for WRK HTS token.
- * @dev Upgradeable via UUPS. Token accounting stays in HTS. This contract only controls emission and distribution.
+ * @dev Token accounting stays in HTS. This contract only controls emission and distribution.
  */
-contract WorkEmissionController is
-	Initializable,
-	OwnableUpgradeable,
-	UUPSUpgradeable
-{
+contract WorkEmissionController is Ownable {
 	using Epochs for Epochs.Storage;
 	using Entities for Entities.Value;
 
 	address private constant HTS_PRECOMPILE = address(0x167);
 	IHederaTokenService private constant hts = IHederaTokenService(HTS_PRECOMPILE);
 
-	/// @custom:storage-location erc7201:work.WorkEmissionController.storage
-	struct WorkEmissionControllerStorage {
-		address wrkToken;
-		address rewards;
-		uint256 lastTimestamp;
-		uint256 trackedSupply;
-		Epochs.Storage epochs;
-		Entities.Value entityFunds;
-	}
-
-	// keccak256("workit.contracts.tokens.WorkEmissionController") & ~bytes32(uint256(0xff))
-	bytes32 private constant WORK_EMISSION_CONTROLLER_STORAGE_LOCATION =
-		0x6d5f076710d0950e44997c636088935ae60ff728127c24345853a09daf8c5400;
-
-	function _getWorkEmissionControllerStorage()
-		private
-		pure
-		returns (WorkEmissionControllerStorage storage $)
-	{
-		assembly {
-			$.slot := WORK_EMISSION_CONTROLLER_STORAGE_LOCATION
-		}
-	}
+	address public wrkToken;
+	address public rewards;
+	uint256 public lastTimestamp;
+	uint256 public trackedSupply;
+	Epochs.Storage public epochs;
+	Entities.Value public entityFunds;
 
 	error InvalidAddress();
 	error WorkTokenAlreadyCreated();
@@ -100,27 +77,15 @@ contract WorkEmissionController is
 		uint256 timestamp
 	);
 
-	/// @custom:oz-upgrades-unsafe-allow constructor
-	constructor() {
-		_disableInitializers();
-	}
-
-	/**
-	 * @notice Initializes upgradeability and ownership.
-	 * @param initialOwner The owner that can administer emission and upgrades.
-	 */
-	function initialize(address initialOwner) external initializer {
+	constructor(address initialOwner) Ownable(initialOwner) {
 		if (initialOwner == address(0)) {
 			revert InvalidAddress();
 		}
 
-		__Ownable_init(initialOwner);
+		lastTimestamp = block.timestamp;
+		epochs.initialize(24 hours);
 
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-		$.lastTimestamp = block.timestamp;
-		$.epochs.initialize(24 hours);
-
-		emit WorkControllerInitialized(owner(), $.wrkToken, block.timestamp);
+		emit WorkControllerInitialized(owner(), wrkToken, block.timestamp);
 	}
 
 	/**
@@ -128,8 +93,7 @@ contract WorkEmissionController is
 	 * @dev Must be called once by the owner after initialization. Requires HBAR to cover HTS token creation fee.
 	 */
 	function createWorkToken() external payable onlyOwner returns (address) {
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-		if ($.wrkToken != address(0)) {
+		if (wrkToken != address(0)) {
 			revert WorkTokenAlreadyCreated();
 		}
 
@@ -139,41 +103,39 @@ contract WorkEmissionController is
 		return tokenAddress;
 	}
 
-	function setStakingRewardsCollector(address _rewards) public onlyOwner {
-		if (_rewards == address(0)) {
+	function setStakingRewardsCollector(address rewards_) public onlyOwner {
+		if (rewards_ == address(0)) {
 			revert InvalidAddress();
 		}
 
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-		address previous = $.rewards;
-		$.rewards = _rewards;
+		address previous = rewards;
+		rewards = rewards_;
 
-		emit StakingRewardsCollectorUpdated(previous, $.rewards);
+		emit StakingRewardsCollectorUpdated(previous, rewards);
 	}
 
 	function mintWork() external {
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
 		uint256 workToEmit;
 
-		($.lastTimestamp, workToEmit) = _generateEmission();
+		(lastTimestamp, workToEmit) = _generateEmission();
 		if (workToEmit == 0) return;
 
-		$.entityFunds.add(Entities.fromTotalValue(workToEmit));
-		emit EmissionGenerated($.epochs.currentEpoch(), workToEmit, block.timestamp);
+		entityFunds.add(Entities.fromTotalValue(workToEmit));
+		emit EmissionGenerated(epochs.currentEpoch(), workToEmit, block.timestamp);
 
 		_mintWRK(workToEmit);
 
-		uint256 stakingAmount = $.entityFunds.staking;
+		uint256 stakingAmount = entityFunds.staking;
 		if (stakingAmount == 0) return;
-		if ($.rewards == address(0)) {
+		if (rewards == address(0)) {
 			revert InvalidAddress();
 		}
 
-		_transferWRK(address(this), $.rewards, stakingAmount);
-		$.entityFunds.staking = 0;
+		_transferWRK(address(this), rewards, stakingAmount);
+		entityFunds.staking = 0;
 
-		IRewards($.rewards).updateRewardReserve();
-		emit StakingRewardsDispatched($.rewards, stakingAmount, block.timestamp);
+		IRewards(rewards).updateRewardReserve();
+		emit StakingRewardsDispatched(rewards, stakingAmount, block.timestamp);
 	}
 
 	function burnWork(uint256 amount) external {
@@ -189,12 +151,11 @@ contract WorkEmissionController is
 			revert InvalidAddress();
 		}
 
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-		uint256 amount = $.entityFunds.get(entity);
+		uint256 amount = entityFunds.get(entity);
 		if (amount == 0) return;
 
 		_transferWRK(address(this), to, amount);
-		$.entityFunds.reset(entity);
+		entityFunds.reset(entity);
 
 		emit WorkDistributed(
 			to,
@@ -205,56 +166,30 @@ contract WorkEmissionController is
 	}
 
 	function stakersWorkToEmit() public view returns (uint256 toEmit) {
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
 		(, toEmit) = _generateEmission();
 
-		toEmit = Entities.fromTotalValue(toEmit).addReturn($.entityFunds).staking;
+		toEmit = Entities.fromTotalValue(toEmit).addReturn(entityFunds).staking;
 	}
 
 	function currentEpoch() public view returns (uint256) {
-		return _getWorkEmissionControllerStorage().epochs.currentEpoch();
-	}
-
-	function wrkToken() public view returns (address) {
-		return _getWorkEmissionControllerStorage().wrkToken;
-	}
-
-	function rewards() public view returns (address) {
-		return _getWorkEmissionControllerStorage().rewards;
-	}
-
-	function lastTimestamp() public view returns (uint256) {
-		return _getWorkEmissionControllerStorage().lastTimestamp;
-	}
-
-	function trackedSupply() public view returns (uint256) {
-		return _getWorkEmissionControllerStorage().trackedSupply;
-	}
-
-	function epochs() public view returns (Epochs.Storage memory) {
-		return _getWorkEmissionControllerStorage().epochs;
-	}
-
-	function entityFunds() public view returns (Entities.Value memory) {
-		return _getWorkEmissionControllerStorage().entityFunds;
+		return epochs.currentEpoch();
 	}
 
 	function entityFundFor(string memory entity) external view returns (uint256) {
-		return _getWorkEmissionControllerStorage().entityFunds.get(entity);
+		return entityFunds.get(entity);
 	}
 
 	function _computeEdgeEmissions(
 		uint256 epoch,
-		uint256 _lastTimestamp,
+		uint256 lastTimestamp_,
 		uint256 currentTimestamp
 	) internal view returns (uint256) {
 		require(
-			currentTimestamp > _lastTimestamp,
+			currentTimestamp > lastTimestamp_,
 			"Work._computeEdgeEmissions: Invalid currentTimestamp"
 		);
 
-		Epochs.Storage storage _epochs = _getWorkEmissionControllerStorage().epochs;
-		(uint256 startTimestamp, uint256 endTimestamp) = _epochs
+		(uint256 startTimestamp, uint256 endTimestamp) = epochs
 			.epochEdgeTimestamps(epoch);
 
 		uint256 upperBoundTime = 0;
@@ -265,16 +200,16 @@ contract WorkEmissionController is
 			currentTimestamp <= endTimestamp
 		) {
 			upperBoundTime = currentTimestamp;
-			lowerBoundTime = _lastTimestamp <= startTimestamp
+			lowerBoundTime = lastTimestamp_ <= startTimestamp
 				? startTimestamp
-				: _lastTimestamp;
+				: lastTimestamp_;
 		} else if (
-			startTimestamp <= _lastTimestamp && _lastTimestamp <= endTimestamp
+			startTimestamp <= lastTimestamp_ && lastTimestamp_ <= endTimestamp
 		) {
 			upperBoundTime = currentTimestamp <= endTimestamp
 				? currentTimestamp
 				: endTimestamp;
-			lowerBoundTime = _lastTimestamp;
+			lowerBoundTime = lastTimestamp_;
 		} else {
 			revert("Work._computeEdgeEmissions: Invalid timestamps");
 		}
@@ -283,28 +218,27 @@ contract WorkEmissionController is
 			WorkEmission.throughTimeRange(
 				epoch,
 				upperBoundTime - lowerBoundTime,
-				_epochs.epochLength
+				epochs.epochLength
 			);
 	}
 
 	function _generateEmission()
 		internal
 		view
-		returns (uint256 _lastTimestamp, uint256 workToEmit)
+		returns (uint256 newLastTimestamp, uint256 workToEmit)
 	{
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
 		uint256 currentTimestamp = block.timestamp;
-		_lastTimestamp = $.lastTimestamp;
+		uint256 last = lastTimestamp;
 
-		if (_lastTimestamp < currentTimestamp) {
-			uint256 lastGenerateEpoch = $.epochs.computeEpoch(_lastTimestamp);
+		if (last < currentTimestamp) {
+			uint256 lastGenerateEpoch = epochs.computeEpoch(last);
 			workToEmit = _computeEdgeEmissions(
 				lastGenerateEpoch,
-				_lastTimestamp,
+				last,
 				currentTimestamp
 			);
 
-			uint256 _currentEpoch = $.epochs.currentEpoch();
+			uint256 _currentEpoch = epochs.currentEpoch();
 			if (_currentEpoch > lastGenerateEpoch) {
 				uint256 intermediateEpochs = _currentEpoch -
 					lastGenerateEpoch -
@@ -319,20 +253,20 @@ contract WorkEmissionController is
 
 				workToEmit += _computeEdgeEmissions(
 					_currentEpoch,
-					_lastTimestamp,
+					last,
 					currentTimestamp
 				);
 			}
 
-			_lastTimestamp = currentTimestamp;
+			last = currentTimestamp;
 		}
+
+		newLastTimestamp = last;
 	}
 
 	function _createWorkToken(
 		uint256 hbarAmount
 	) private returns (address tokenAddress) {
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-
 		// Official HTS tutorial pattern: build HederaToken struct and call precompile at 0x167.
 		IHederaTokenService.KeyValue memory contractKey = IHederaTokenService
 			.KeyValue({
@@ -369,8 +303,8 @@ contract WorkEmissionController is
 		);
 		_requireSuccess(responseCode);
 
-		$.wrkToken = createdToken;
-		$.trackedSupply = WorkInfo.ICO_FUNDS;
+		wrkToken = createdToken;
+		trackedSupply = WorkInfo.ICO_FUNDS;
 
 		emit WorkTokenCreated(
 			createdToken,
@@ -383,15 +317,14 @@ contract WorkEmissionController is
 	}
 
 	function _mintWRK(uint256 amount) internal {
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-		address tokenAddress = $.wrkToken;
+		address tokenAddress = wrkToken;
 		_requireWorkTokenCreated(tokenAddress);
 		if (
-			$.trackedSupply > WorkInfo.MAX_SUPPLY ||
-			amount > (WorkInfo.MAX_SUPPLY - $.trackedSupply)
+			trackedSupply > WorkInfo.MAX_SUPPLY ||
+			amount > (WorkInfo.MAX_SUPPLY - trackedSupply)
 		) {
 			revert MaxSupplyExceeded(
-				$.trackedSupply,
+				trackedSupply,
 				amount,
 				WorkInfo.MAX_SUPPLY
 			);
@@ -405,12 +338,11 @@ contract WorkEmissionController is
 		);
 		_requireSuccess(responseCode);
 
-		$.trackedSupply += amount;
+		trackedSupply += amount;
 	}
 
 	function _burnWRK(uint256 amount) internal {
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-		address tokenAddress = $.wrkToken;
+		address tokenAddress = wrkToken;
 		_requireWorkTokenCreated(tokenAddress);
 		int64 burnAmount = _toInt64(amount);
 
@@ -421,14 +353,13 @@ contract WorkEmissionController is
 		);
 		_requireSuccess(responseCode);
 
-		$.trackedSupply -= amount;
+		trackedSupply -= amount;
 	}
 
 	function _transferWRK(address from, address to, uint256 amount) internal {
 		if (amount == 0) return;
 
-		WorkEmissionControllerStorage storage $ = _getWorkEmissionControllerStorage();
-		address tokenAddress = $.wrkToken;
+		address tokenAddress = wrkToken;
 		_requireWorkTokenCreated(tokenAddress);
 		int64 transferAmount = _toTransferAmount(amount);
 		int64 responseCode = hts.transferToken(
@@ -439,8 +370,6 @@ contract WorkEmissionController is
 		);
 		_requireSuccess(responseCode);
 	}
-
-	function _authorizeUpgrade(address) internal override onlyOwner {}
 
 	function _requireSuccess(int64 responseCode) internal pure {
 		if (responseCode != HederaResponseCodes.SUCCESS) {

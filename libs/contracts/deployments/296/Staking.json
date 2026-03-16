@@ -1,14 +1,35 @@
 {
-  "address": "0xB6128e4D918ad4654aF8a454e241077b05a2017A",
+  "address": "0xD3Ef2989f48812b13811FD6a57dc192C042A498C",
   "abi": [
     {
-      "inputs": [],
-      "name": "InsufficientLiquidity",
-      "type": "error"
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "router",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "rewards_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "workToken_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "gToken_",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
     },
     {
       "inputs": [],
-      "name": "InvalidInitialization",
+      "name": "InsufficientLiquidity",
       "type": "error"
     },
     {
@@ -55,11 +76,6 @@
         }
       ],
       "name": "MathLinearInterpolationInvalidValues",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NotInitializing",
       "type": "error"
     },
     {
@@ -132,19 +148,6 @@
         }
       ],
       "name": "EarlyUnlockPenalty",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
-          "internalType": "uint64",
-          "name": "version",
-          "type": "uint64"
-        }
-      ],
-      "name": "Initialized",
       "type": "event"
     },
     {
@@ -352,34 +355,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "router",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "rewards_",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "workToken_",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "gToken_",
-          "type": "address"
-        }
-      ],
-      "name": "initialize",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {

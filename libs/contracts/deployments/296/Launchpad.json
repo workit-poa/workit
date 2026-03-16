@@ -1,6 +1,27 @@
 {
-  "address": "0x206c5B2146B3976e62fE21e37900bc0006627a99",
+  "address": "0xcf545529573EB49851a9bAF599331e670a9c6284",
   "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "factory_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "gToken_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "staking_",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
     {
       "inputs": [
         {
@@ -134,22 +155,6 @@
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "nonce",
-          "type": "uint256"
-        },
-        {
-          "internalType": "address",
-          "name": "requiredToken",
-          "type": "address"
-        }
-      ],
-      "name": "GTokenNotSecurityDeposit",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
           "name": "balance",
           "type": "uint256"
         },
@@ -160,6 +165,32 @@
         }
       ],
       "name": "InsufficientBalance",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "campaignId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "balance",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "required",
+          "type": "uint256"
+        }
+      ],
+      "name": "InsufficientClaimBalance",
       "type": "error"
     },
     {
@@ -211,11 +242,6 @@
       "type": "error"
     },
     {
-      "inputs": [],
-      "name": "InvalidInitialization",
-      "type": "error"
-    },
-    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -261,22 +287,6 @@
       "inputs": [
         {
           "internalType": "address",
-          "name": "campaign",
-          "type": "address"
-        }
-      ],
-      "name": "NoSecurityGTokens",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NoSecurityTokens",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
           "name": "caller",
           "type": "address"
         },
@@ -287,27 +297,6 @@
         }
       ],
       "name": "NotCampaignMigrator",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "totalAmount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "requiredAmount",
-          "type": "uint256"
-        }
-      ],
-      "name": "NotEnoughGTokenAmount",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NotInitializing",
       "type": "error"
     },
     {
@@ -404,22 +393,55 @@
     {
       "inputs": [
         {
-          "internalType": "uint256",
-          "name": "nonce",
-          "type": "uint256"
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "SafeERC20FailedOperation",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
         },
         {
           "internalType": "uint256",
-          "name": "epochsLeft",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "minEpochs",
+          "name": "responseCode",
           "type": "uint256"
         }
       ],
-      "name": "SecurityGTokenExpired",
+      "name": "TokenAssociationFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "expected",
+          "type": "address"
+        }
+      ],
+      "name": "UnauthorizedGToken",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "UnexpectedHbar",
       "type": "error"
     },
     {
@@ -447,17 +469,6 @@
         }
       ],
       "name": "ZeroCampaignTokenSupply",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "nonce",
-          "type": "uint256"
-        }
-      ],
-      "name": "ZeroGTokenBalance",
       "type": "error"
     },
     {
@@ -494,19 +505,6 @@
         }
       ],
       "name": "ApprovalForAll",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
-          "internalType": "uint64",
-          "name": "version",
-          "type": "uint64"
-        }
-      ],
-      "name": "Initialized",
       "type": "event"
     },
     {
@@ -661,29 +659,22 @@
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "SECURITY_GTOKEN_AMOUNT",
-      "outputs": [
+      "inputs": [
         {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
         }
       ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "SECURITY_GTOKEN_MIN_EPOCHS_TO_EXPIRE",
+      "name": "associateTokenIfNeeded",
       "outputs": [
         {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
+          "internalType": "bool",
+          "name": "associated",
+          "type": "bool"
         }
       ],
-      "stateMutability": "view",
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -753,23 +744,10 @@
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "campaignBeacon",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "campaignId",
+          "name": "",
           "type": "uint256"
         }
       ],
@@ -788,12 +766,12 @@
       "inputs": [
         {
           "internalType": "address",
-          "name": "tokenA",
+          "name": "",
           "type": "address"
         },
         {
           "internalType": "address",
-          "name": "tokenB",
+          "name": "",
           "type": "address"
         }
       ],
@@ -809,23 +787,10 @@
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "campaignMigrator",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "migrator",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "address",
-          "name": "campaign",
+          "name": "",
           "type": "address"
         }
       ],
@@ -835,25 +800,6 @@
           "internalType": "address",
           "name": "",
           "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "campaign",
-          "type": "address"
-        }
-      ],
-      "name": "campaignRequiresSecurity",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
         }
       ],
       "stateMutability": "view",
@@ -907,11 +853,6 @@
           "type": "tuple"
         },
         {
-          "internalType": "uint256[]",
-          "name": "securityNonces",
-          "type": "uint256[]"
-        },
-        {
           "internalType": "uint256",
           "name": "campaignTokenSupply",
           "type": "uint256"
@@ -919,20 +860,7 @@
       ],
       "name": "createCampaign",
       "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "decimals",
-      "outputs": [
-        {
-          "internalType": "uint8",
-          "name": "",
-          "type": "uint8"
-        }
-      ],
-      "stateMutability": "pure",
+      "stateMutability": "payable",
       "type": "function"
     },
     {
@@ -953,139 +881,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "campaign",
-          "type": "address"
-        }
-      ],
-      "name": "getSecurityGTokens",
-      "outputs": [
-        {
-          "components": [
-            {
-              "internalType": "uint256",
-              "name": "nonce",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "amount",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "votePower",
-              "type": "uint256"
-            },
-            {
-              "components": [
-                {
-                  "internalType": "uint256",
-                  "name": "rewardPerShare",
-                  "type": "uint256"
-                },
-                {
-                  "internalType": "uint256",
-                  "name": "epochStaked",
-                  "type": "uint256"
-                },
-                {
-                  "internalType": "uint256",
-                  "name": "epochsLocked",
-                  "type": "uint256"
-                },
-                {
-                  "internalType": "uint256",
-                  "name": "lastClaimEpoch",
-                  "type": "uint256"
-                },
-                {
-                  "internalType": "uint256",
-                  "name": "stakeWeight",
-                  "type": "uint256"
-                },
-                {
-                  "components": [
-                    {
-                      "internalType": "address",
-                      "name": "token0",
-                      "type": "address"
-                    },
-                    {
-                      "internalType": "address",
-                      "name": "token1",
-                      "type": "address"
-                    },
-                    {
-                      "internalType": "uint256",
-                      "name": "liquidity",
-                      "type": "uint256"
-                    },
-                    {
-                      "internalType": "uint256",
-                      "name": "liqValue",
-                      "type": "uint256"
-                    },
-                    {
-                      "internalType": "address",
-                      "name": "pair",
-                      "type": "address"
-                    }
-                  ],
-                  "internalType": "struct IGToken.LiquidityInfo",
-                  "name": "lpDetails",
-                  "type": "tuple"
-                }
-              ],
-              "internalType": "struct IGToken.Attributes",
-              "name": "attributes",
-              "type": "tuple"
-            }
-          ],
-          "internalType": "struct IGToken.Balance[]",
-          "name": "",
-          "type": "tuple[]"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "factory_",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "gToken_",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "campaignBeacon",
-          "type": "address"
-        },
-        {
-          "internalType": "string",
-          "name": "uri_",
-          "type": "string"
-        },
-        {
-          "internalType": "address",
-          "name": "staking_",
-          "type": "address"
-        }
-      ],
-      "name": "initialize",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -1150,19 +945,6 @@
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "name",
-      "outputs": [
-        {
-          "internalType": "string",
-          "name": "",
-          "type": "string"
-        }
-      ],
-      "stateMutability": "pure",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "address",
@@ -1198,7 +980,7 @@
           "type": "bytes4"
         }
       ],
-      "stateMutability": "nonpayable",
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -1237,7 +1019,7 @@
           "type": "bytes4"
         }
       ],
-      "stateMutability": "nonpayable",
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -1256,19 +1038,6 @@
     {
       "inputs": [],
       "name": "renounceOwnership",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "to",
-          "type": "address"
-        }
-      ],
-      "name": "returnSecurityGTokens",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -1360,19 +1129,6 @@
     {
       "inputs": [
         {
-          "internalType": "address",
-          "name": "migrator",
-          "type": "address"
-        }
-      ],
-      "name": "setCampaignMigrator",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
           "internalType": "bytes4",
           "name": "interfaceId",
           "type": "bytes4"
@@ -1390,23 +1146,10 @@
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "symbol",
-      "outputs": [
-        {
-          "internalType": "string",
-          "name": "",
-          "type": "string"
-        }
-      ],
-      "stateMutability": "pure",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "id",
+          "name": "",
           "type": "uint256"
         }
       ],

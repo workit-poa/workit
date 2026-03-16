@@ -1,6 +1,54 @@
 {
-  "address": "0x20856524AE5F8B6d5D48b1dc07444C35f8a1Fe9f",
+  "address": "0xD68820CFb6f1FF90Ec29A2739A41B03b1CD56892",
   "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "launchpad_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "gToken_",
+          "type": "address"
+        },
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "campaignToken",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "fundingToken",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "lockEpochs",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "goal",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "deadline",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct ICampaign.Listing",
+          "name": "listing_",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
     {
       "inputs": [
         {
@@ -163,11 +211,6 @@
       "type": "error"
     },
     {
-      "inputs": [],
-      "name": "InvalidInitialization",
-      "type": "error"
-    },
-    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -201,11 +244,6 @@
     },
     {
       "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "securityCount",
-          "type": "uint256"
-        },
         {
           "internalType": "uint256",
           "name": "campaignSupply",
@@ -245,11 +283,6 @@
         }
       ],
       "name": "NotAllowed",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NotInitializing",
       "type": "error"
     },
     {
@@ -433,19 +466,6 @@
       "anonymous": false,
       "inputs": [
         {
-          "indexed": false,
-          "internalType": "uint64",
-          "name": "version",
-          "type": "uint64"
-        }
-      ],
-      "name": "Initialized",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
           "indexed": true,
           "internalType": "address",
           "name": "previousOwner",
@@ -517,56 +537,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "launchpad_",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "gToken_",
-          "type": "address"
-        },
-        {
-          "components": [
-            {
-              "internalType": "address",
-              "name": "campaignToken",
-              "type": "address"
-            },
-            {
-              "internalType": "address",
-              "name": "fundingToken",
-              "type": "address"
-            },
-            {
-              "internalType": "uint256",
-              "name": "lockEpochs",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "goal",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "deadline",
-              "type": "uint256"
-            }
-          ],
-          "internalType": "struct ICampaign.Listing",
-          "name": "listing_",
-          "type": "tuple"
-        }
-      ],
-      "name": "initialize",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
-import {IGToken} from "../tokens/GToken/IGToken.sol";
 import {ICampaign} from "./ICampaign.sol";
 
 interface ILaunchpad {
@@ -34,16 +33,15 @@ interface ILaunchpad {
 		address pair,
 		address campaign
 	);
-	error NoSecurityTokens();
-	error ZeroGTokenBalance(uint256 nonce);
-	error SecurityGTokenExpired(
-		uint256 nonce,
-		uint256 epochsLeft,
-		uint256 minEpochs
+	error TokenAssociationFailed(address token, uint256 responseCode);
+	error InsufficientClaimBalance(
+		address user,
+		uint256 campaignId,
+		uint256 balance,
+		uint256 required
 	);
-	error GTokenNotSecurityDeposit(uint256 nonce, address requiredToken);
-	error NotEnoughGTokenAmount(uint256 totalAmount, uint256 requiredAmount);
-	error NoSecurityGTokens(address campaign);
+	error UnauthorizedGToken(address sender, address expected);
+	error UnexpectedHbar(uint256 amount);
 
 	function mint(address to, uint256 amount) external;
 
@@ -53,27 +51,14 @@ interface ILaunchpad {
 
 	function createCampaign(
 		ICampaign.Listing memory listing,
-		uint256[] calldata securityNonces,
 		uint256 campaignTokenSupply
-	) external;
-
-	function getSecurityGTokens(
-		address
-	) external view returns (IGToken.Balance[] memory);
-
-	function returnSecurityGTokens(address to) external;
-
-	function campaignRequiresSecurity(address campaign) external view returns (bool);
+	) external payable;
+	function associateTokenIfNeeded(address token) external returns (bool associated);
 
 	function workToken() external view returns (address);
+	function factory() external view returns (address);
 
 	function campaignPair(address) external view returns (address);
 
 	function tokenBalance(uint256 id) external view returns (uint256);
-
-	function name() external view returns (string memory);
-
-	function symbol() external view returns (string memory);
-
-	function decimals() external view returns (uint8);
 }

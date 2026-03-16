@@ -24,14 +24,12 @@ describe("Rewards", function () {
 		await workController.waitForDeployment();
 
 		const rewardsFactory = await ethers.getContractFactory("Rewards");
-		const rewards = (await rewardsFactory.deploy()) as any;
-		await rewards.waitForDeployment();
-
-		await rewards.initialize(
+		const rewards = (await rewardsFactory.deploy(
 			await workToken.getAddress(),
 			await gToken.getAddress(),
 			await workController.getAddress(),
-		);
+		)) as any;
+		await rewards.waitForDeployment();
 
 		return { owner, user, workToken, gToken, workController, rewards };
 	}

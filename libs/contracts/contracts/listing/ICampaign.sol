@@ -40,7 +40,7 @@ interface ICampaign {
 	error CampaignSucceeded(uint256 fundingSupply, uint256 goal);
 	error CampaignNotFailed(Status status);
 	error GoalNotReached(uint256 goal, uint256 fundingSupply);
-	error MissingCampaignTokens(uint256 securityCount, uint256 campaignSupply);
+	error MissingCampaignTokens(uint256 campaignSupply);
 	error ZeroAddress(address addr);
 	error CampaignNotExpired(uint256 deadline, uint256 currentTime);
 	error NotAllowed(address caller, address launchpad, address migrator);
@@ -59,16 +59,6 @@ interface ICampaign {
 	//////////////////////////////////////////////////////////////*/
 
 	event ContributionMade(address indexed contributor, uint256 amount);
-
-	/*//////////////////////////////////////////////////////////////
-	                         INITIALIZER
-	//////////////////////////////////////////////////////////////*/
-
-	function initialize(
-		address launchpad_,
-		address gToken_,
-		Listing calldata listing_
-	) external;
 
 	/*//////////////////////////////////////////////////////////////
 	                       CONTRIBUTIONS

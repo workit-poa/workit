@@ -1,139 +1,95 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
+
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ERC1155Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC1155Receiver} from "@openzeppelin/contracts/interfaces/IERC1155Receiver.sol";
+
+import {IHRC719} from "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHRC719.sol";
+import {HederaResponseCodes} from "@hashgraph/smart-contracts/contracts/system-contracts/HederaResponseCodes.sol";
 
 import {ICampaign} from "./ICampaign.sol";
 import {ILaunchpad} from "./ILaunchpad.sol";
-import {IGToken} from "../tokens/GToken/IGToken.sol";
 import {IStaking} from "../staking/IStaking.sol";
 import {IUniswapV2Factory} from "../interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Pair} from "../interfaces/IUniswapV2Pair.sol";
 import {CampaignFactory} from "../abstracts/CampaignFactory.sol";
 import {CampaignLib} from "./CampaignLib.sol";
 import {UniswapV2Library} from "../libraries/UniswapV2Library.sol";
-import {GTokenLib} from "../tokens/GToken/GTokenLib.sol";
-import {Epochs} from "../libraries/Epochs.sol";
-import {IERC1155} from "@openzeppelin/contracts/interfaces/IERC1155.sol";
-import {ISFT} from "../abstracts/ISFT.sol";
-import {FullMath} from "../libraries/FullMath.sol";
 
-contract Launchpad is
-	Initializable,
-	OwnableUpgradeable,
-	ERC1155Upgradeable,
-	ERC1155Holder,
-	ILaunchpad,
-	CampaignFactory
-{
+contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Receiver {
+	using SafeERC20 for IERC20;
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
 	using CampaignLib for address;
-	using GTokenLib for IGToken.Attributes;
-	using Epochs for Epochs.Storage;
 
 	uint256 public constant MIN_DURATION = 1 minutes;
 
 	uint256 public constant MAX_LOCK_EPOCHS = 1080;
 	uint256 public constant MIN_LOCK_EPOCHS = 90;
 
-	uint256 public constant SECURITY_GTOKEN_AMOUNT = 500 ether;
-	uint256 public constant SECURITY_GTOKEN_MIN_EPOCHS_TO_EXPIRE = 90; // 90 epochs
-	string private constant LAUNCHPAD_NAME = "GainzSwap Launchpad";
-	string private constant LAUNCHPAD_SYMBOL = "GLP";
-	uint8 private constant LAUNCHPAD_DECIMALS = 18;
+	address public override factory;
+	address private _gToken;
+	address private _staking;
+	mapping(address => address) public override campaignPair;
+	mapping(address => EnumerableSet.UintSet) private _userCampaignIds;
+	mapping(uint256 => uint256) public override tokenBalance;
 
-	/*//////////////////////////////////////////////////////////////
-	                      ERC-7201 STORAGE
-	//////////////////////////////////////////////////////////////*/
-
-	/// @custom:storage-location erc7201:workit.contracts.listing.Launchpad
-	struct LaunchpadStorage {
-		address factory;
-		address gToken;
-		address staking;
-		mapping(address => address[]) deprecatedFundingTokenPathToWRK;
-		EnumerableSet.AddressSet deprecatedAllowedFundingTokens;
-		mapping(address => address) campaignPair;
-		mapping(address => uint256[]) securityNonces; // campaign => gToken nonces
-		mapping(address => EnumerableSet.UintSet) userCampaignIds;
-		mapping(uint256 => uint256) tokenSupply;
-		//
-
-		address campaignMigrator; // KEPT LAST SO THAT WE MIGHT REMOVE IT LATER
-		mapping(address => bool) campaignRequiresSecurity;
-	}
-
-	// keccak256("workit.contracts.listing.Launchpad") & ~bytes32(uint256(0xff))
-	bytes32 private constant LAUNCHPAD_STORAGE_LOCATION =
-		0x41abdac30f476ae9ebbeda7692ad43887ed9acda7f3705e022dd2c57242b8400;
-
-	function _launchpadStorage()
-		internal
-		pure
-		returns (LaunchpadStorage storage $)
-	{
-		assembly {
-			$.slot := LAUNCHPAD_STORAGE_LOCATION
-		}
-	}
-
-	/*//////////////////////////////////////////////////////////////
-	                         INITIALIZER
-	//////////////////////////////////////////////////////////////*/
-
-	function initialize(
+	constructor(
 		address factory_,
 		address gToken_,
-		address campaignBeacon,
-		string memory uri_,
 		address staking_
-	) external initializer {
+	) Ownable(msg.sender) ERC1155("") {
 		if (factory_ == address(0)) revert InvalidAddress(factory_);
 		if (gToken_ == address(0)) revert InvalidAddress(gToken_);
 		if (staking_ == address(0)) revert InvalidAddress(staking_);
 
-		__Ownable_init(msg.sender);
-		__ERC1155_init(uri_);
-		__CampaignFactory_init(campaignBeacon);
-
-		LaunchpadStorage storage $ = _launchpadStorage();
-		$.factory = factory_;
-		$.gToken = gToken_;
-		$.staking = staking_;
-	}
-
-	function name() external pure returns (string memory) {
-		return LAUNCHPAD_NAME;
-	}
-
-	function symbol() external pure returns (string memory) {
-		return LAUNCHPAD_SYMBOL;
-	}
-
-	function decimals() external pure returns (uint8) {
-		return LAUNCHPAD_DECIMALS;
+		factory = factory_;
+		_gToken = gToken_;
+		_staking = staking_;
 	}
 
 	/*//////////////////////////////////////////////////////////////
-	                     ERC1155 LOGIC
+	                     HTS + RECEIVER LOGIC
 	//////////////////////////////////////////////////////////////*/
 
 	function supportsInterface(
 		bytes4 interfaceId
-	)
-		public
-		view
-		virtual
-		override(ERC1155Upgradeable, ERC1155Holder)
-		returns (bool)
-	{
-		return super.supportsInterface(interfaceId);
+	) public view override(ERC1155, IERC165) returns (bool) {
+		return
+			interfaceId == type(IERC1155Receiver).interfaceId ||
+			super.supportsInterface(interfaceId);
+	}
+
+	function onERC1155Received(
+		address,
+		address,
+		uint256,
+		uint256,
+		bytes calldata
+	) external view override returns (bytes4) {
+		if (msg.sender != _gToken) {
+			revert UnauthorizedGToken(msg.sender, _gToken);
+		}
+		return this.onERC1155Received.selector;
+	}
+
+	function onERC1155BatchReceived(
+		address,
+		address,
+		uint256[] calldata,
+		uint256[] calldata,
+		bytes calldata
+	) external view override returns (bytes4) {
+		if (msg.sender != _gToken) {
+			revert UnauthorizedGToken(msg.sender, _gToken);
+		}
+		return this.onERC1155BatchReceived.selector;
 	}
 
 	modifier onlyCampaigns() {
@@ -141,98 +97,66 @@ contract Launchpad is
 		_;
 	}
 
-	modifier onlyCampaignMigrator() {
-		address migrator = _launchpadStorage().campaignMigrator;
-		if (msg.sender != migrator)
-			revert NotCampaignMigrator(msg.sender, migrator);
-		_;
+	function associateTokenIfNeeded(
+		address token
+	) public override returns (bool associated) {
+		if (token == address(0)) revert InvalidAddress(token);
+
+		try IHRC719(token).associate() returns (uint256 responseCode) {
+			uint256 successCode = uint256(int256(HederaResponseCodes.SUCCESS));
+			uint256 alreadyAssociatedCode = uint256(
+				int256(HederaResponseCodes.TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT)
+			);
+			if (responseCode == successCode) return true;
+			if (responseCode == alreadyAssociatedCode) return false;
+			revert TokenAssociationFailed(token, responseCode);
+		} catch {
+			// EVM-native tokens won't implement HRC-719 and don't need explicit association.
+			return false;
+		}
 	}
+
+	/*//////////////////////////////////////////////////////////////
+	                     SFT MINT/BURN LOGIC
+	//////////////////////////////////////////////////////////////*/
 
 	function mint(address to, uint256 amount) external onlyCampaigns {
 		uint256 id = msg.sender.tokenId();
 		_mint(to, id, amount, "");
+		tokenBalance[id] += amount;
 	}
 
 	function burn(address from, uint256 amount) external onlyCampaigns {
 		uint256 id = msg.sender.tokenId();
-
 		uint256 balance = balanceOf(from, id);
 		if (balance < amount)
-			revert ERC1155InsufficientBalance(from, balance, amount, id);
+			revert InsufficientClaimBalance(from, id, balance, amount);
 
 		_burn(from, id, amount);
-	}
-
-	function tokenBalance(uint256 id) external view returns (uint256) {
-		return _launchpadStorage().tokenSupply[id];
-	}
-
-	function _update(
-		address from,
-		address to,
-		uint256[] memory ids,
-		uint256[] memory values
-	) internal virtual override {
-		ERC1155Upgradeable._update(from, to, ids, values);
-
-		LaunchpadStorage storage $ = _launchpadStorage();
-		if (from == address(0)) {
-			for (uint256 i; i < ids.length; ++i) {
-				unchecked {
-					$.tokenSupply[ids[i]] += values[i];
-				}
-			}
-		} else if (to == address(0)) {
-			for (uint256 i; i < ids.length; ++i) {
-				unchecked {
-					$.tokenSupply[ids[i]] -= values[i];
-				}
-			}
-		}
-
-		if (from == to) {
-			if (to != address(0)) {
-				_syncUserCampaignIds(to, ids);
-			}
-			return;
-		}
-
-		if (from != address(0)) {
-			_syncUserCampaignIds(from, ids);
-		}
-		if (to != address(0)) {
-			_syncUserCampaignIds(to, ids);
+		unchecked {
+			tokenBalance[id] -= amount;
 		}
 	}
 
-	function _syncUserCampaignIds(address user, uint256[] memory ids) internal {
-		LaunchpadStorage storage $ = _launchpadStorage();
-		for (uint256 i; i < ids.length; ++i) {
-			uint256 id = ids[i];
-			if (balanceOf(user, id) == 0) {
-				$.userCampaignIds[user].remove(id);
-			} else {
-				$.userCampaignIds[user].add(id);
-			}
-		}
-	}
+	/*//////////////////////////////////////////////////////////////
+	                     PAIR DEPLOYMENT
+	//////////////////////////////////////////////////////////////*/
 
 	function deployPair() external onlyCampaigns {
-		LaunchpadStorage storage $ = _launchpadStorage();
 		ICampaign campaign = ICampaign(msg.sender);
 
-		address existingPair = $.campaignPair[address(campaign)];
+		address existingPair = campaignPair[address(campaign)];
 		if (existingPair != address(0))
 			revert PairAlreadyDeployed(address(campaign), existingPair);
 
 		ICampaign.Listing memory listing = campaign.listing();
 
 		address pair = UniswapV2Library.pairFor(
-			$.factory,
+			factory,
 			listing.campaignToken,
 			listing.fundingToken
 		);
-		address createdPair = IUniswapV2Factory($.factory).createPair(
+		address createdPair = IUniswapV2Factory(factory).createPair(
 			listing.campaignToken,
 			listing.fundingToken
 		);
@@ -242,12 +166,13 @@ contract Launchpad is
 				listing.fundingToken
 			);
 
-		$.campaignPair[address(campaign)] = createdPair;
+		campaignPair[address(campaign)] = createdPair;
 
+		associateTokenIfNeeded(createdPair);
 		uint256 liquidity = IUniswapV2Pair(pair).mint(address(this));
-		IERC20(pair).approve($.staking, liquidity);
+		IERC20(pair).forceApprove(_staking, liquidity);
 
-		IStaking($.staking).stakeLiquidityIn(
+		IStaking(_staking).stakeLiquidityIn(
 			pair,
 			liquidity,
 			address(campaign),
@@ -255,39 +180,22 @@ contract Launchpad is
 		);
 	}
 
-	function setCampaignMigrator(address migrator) external onlyOwner {
-		if (migrator == address(0)) revert ZeroMigrator(migrator);
-		_launchpadStorage().campaignMigrator = migrator;
-	}
-
-	function campaignMigrator() public view returns (address migrator) {
-		return _launchpadStorage().campaignMigrator;
-	}
-
-	/*//////////////////////////////////////////////////////////////
-	                     PAIR DEPLOYMENT
-	//////////////////////////////////////////////////////////////*/
 	function _validateListing(
 		ICampaign.Listing memory listing,
 		uint256 campaignTokenSupply
 	) internal view {
-		LaunchpadStorage storage $ = _launchpadStorage();
-
-		// --- Basic token checks ---
 		if (listing.campaignToken == address(0))
 			revert ZeroCampaignToken(listing.campaignToken);
 		if (campaignTokenSupply == 0)
 			revert ZeroCampaignTokenSupply(campaignTokenSupply);
 		_requireListingContainsWorkToken(listing);
 
-		// --- Deadline & duration checks ---
 		if (listing.deadline <= block.timestamp)
 			revert InvalidDeadline(listing.deadline, block.timestamp);
 		uint256 duration = listing.deadline - block.timestamp;
 		if (duration <= MIN_DURATION)
 			revert InvalidDuration(duration, MIN_DURATION + 1, type(uint256).max);
 
-		// --- Lock epochs check ---
 		if (
 			listing.lockEpochs < MIN_LOCK_EPOCHS ||
 			listing.lockEpochs > MAX_LOCK_EPOCHS
@@ -298,15 +206,13 @@ contract Launchpad is
 				MAX_LOCK_EPOCHS
 			);
 
-		// --- tokens campaign and listing state
-		address pair = IUniswapV2Factory($.factory).getPair(
+		address pair = IUniswapV2Factory(factory).getPair(
 			listing.fundingToken,
 			listing.campaignToken
 		);
-		address campaign = campaignByTokens(
-			listing.fundingToken,
+		address campaign = campaignByTokens[listing.fundingToken][
 			listing.campaignToken
-		);
+		];
 		if (pair != address(0) || campaign != address(0))
 			revert PoolOrCampaignExists(
 				listing.fundingToken,
@@ -319,7 +225,7 @@ contract Launchpad is
 	function _requireListingContainsWorkToken(
 		ICampaign.Listing memory listing
 	) internal view {
-		address wrk = IStaking(_launchpadStorage().staking).workToken();
+		address wrk = IStaking(_staking).workToken();
 		if (listing.fundingToken != wrk && listing.campaignToken != wrk)
 			revert ListingMustIncludeWorkToken(
 				listing.fundingToken,
@@ -328,163 +234,26 @@ contract Launchpad is
 			);
 	}
 
-	function _validateSecurityPayment(
-		uint256[] calldata nonces,
-		IGToken gToken,
-		address workToken_,
-		uint256 currentEpoch
-	)
-		internal
-		view
-		returns (IGToken.Balance[] memory balances, uint256[] memory values)
-	{
-		if (nonces.length == 0) revert NoSecurityTokens();
-		balances = _getGTokenBalances(gToken, nonces, msg.sender);
-
-		values = new uint256[](balances.length);
-		uint256 totalWRKAmount;
-		for (uint256 i; i < nonces.length; ++i) {
-			IGToken.Balance memory balance = balances[i];
-			if (balance.amount == 0) revert ZeroGTokenBalance(nonces[i]);
-
-			// Ensure GToken epochs are valid
-			uint256 epochsLeft = balance.attributes.epochsLeft(currentEpoch);
-			if (epochsLeft <= SECURITY_GTOKEN_MIN_EPOCHS_TO_EXPIRE)
-				revert SecurityGTokenExpired(
-					nonces[i],
-					epochsLeft,
-					SECURITY_GTOKEN_MIN_EPOCHS_TO_EXPIRE
-				);
-
-			// Ensure GToken is LP containing WORK token
-			if (!balance.attributes.hasToken(workToken_))
-				revert GTokenNotSecurityDeposit(nonces[i], workToken_);
-
-			values[i] = balance.amount;
-			uint256 nonceValue = gToken.positionValueOf(balance.nonce);
-			if (nonceValue == 0) revert ZeroGTokenBalance(nonces[i]);
-			totalWRKAmount += FullMath.mulDiv(
-				balance.amount,
-				balance.attributes.lpDetails.liqValue,
-				nonceValue
-			);
-		}
-
-		if (totalWRKAmount < SECURITY_GTOKEN_AMOUNT)
-			revert NotEnoughGTokenAmount(totalWRKAmount, SECURITY_GTOKEN_AMOUNT);
-	}
-
 	function createCampaign(
 		ICampaign.Listing memory listing,
-		uint256[] calldata securityNonces,
 		uint256 campaignTokenSupply
-	) external {
-		LaunchpadStorage storage $ = _launchpadStorage();
-		bool isFirstCampaign = _getCampaignFactoryStorage().campaigns.length() == 0;
-		bool shouldProcessSecurity = !isFirstCampaign;
-
+	) external payable onlyOwner {
+		if (msg.value != 0) revert UnexpectedHbar(msg.value);
 		_validateListing(listing, campaignTokenSupply);
-		uint256[] memory values;
-		if (shouldProcessSecurity) {
-			(, values) = _validateSecurityPayment(
-				securityNonces,
-				IGToken($.gToken),
-				IStaking($.staking).workToken(),
-				IGToken($.gToken).epochs().currentEpoch()
-			);
-		}
 
-		(address campaign, ) = _createCampaign(msg.sender, $.gToken, listing);
+		(address campaign, ) = _createCampaign(msg.sender, _gToken, listing);
 		ICampaign(campaign).associateListingTokens();
-		$.campaignRequiresSecurity[campaign] = shouldProcessSecurity;
-		if (shouldProcessSecurity) {
-			_receiveSecurityGToken($, campaign, securityNonces, values);
-		}
 
-		IERC20(listing.campaignToken).transferFrom(
+		IERC20(listing.campaignToken).safeTransferFrom(
 			msg.sender,
 			campaign,
 			campaignTokenSupply
 		);
-		ICampaign(campaign).resolveCampaign(address(0)); // We're using Zero address since campaign state is transitioning Pending -> Funding
+		ICampaign(campaign).resolveCampaign(address(0));
 
-		// Transfer ownership to msg.sender
 		Address.functionCall(
 			campaign,
 			abi.encodeWithSignature("transferOwnership(address)", msg.sender)
-		);
-	}
-
-	/*//////////////////////////////////////////////////////////////
-	                 SECURITY GTOKEN HANDLING
-	//////////////////////////////////////////////////////////////*/
-
-	function _getGTokenBalances(
-		IGToken gToken,
-		uint256[] memory nonces,
-		address owner
-	) internal view returns (IGToken.Balance[] memory balances) {
-		uint256 len = nonces.length;
-
-		balances = new IGToken.Balance[](len);
-		for (uint256 i; i < len; ++i) {
-			balances[i] = gToken.getBalanceAt(owner, nonces[i]);
-		}
-	}
-
-	function _receiveSecurityGToken(
-		LaunchpadStorage storage $,
-		address campaign,
-		uint256[] calldata nonces,
-		uint256[] memory values
-	) internal {
-		IERC1155($.gToken).safeBatchTransferFrom(
-			msg.sender,
-			address(this),
-			nonces,
-			values,
-			""
-		);
-		$.securityNonces[campaign] = nonces;
-	}
-
-	function getSecurityGTokens(
-		address campaign
-	) external view override returns (IGToken.Balance[] memory) {
-		LaunchpadStorage storage $ = _launchpadStorage();
-		return
-			_getGTokenBalances(
-				IGToken($.gToken),
-				$.securityNonces[campaign],
-				address(this)
-			);
-	}
-
-	function returnSecurityGTokens(address to) external onlyCampaigns {
-		LaunchpadStorage storage $ = _launchpadStorage();
-		bool requiresSecurity = $.campaignRequiresSecurity[msg.sender];
-		delete $.campaignRequiresSecurity[msg.sender];
-
-		uint256[] memory ids = $.securityNonces[msg.sender];
-		delete $.securityNonces[msg.sender];
-
-		uint256 len = ids.length;
-		if (len == 0) {
-			if (requiresSecurity) revert NoSecurityGTokens(msg.sender);
-			return;
-		}
-
-		uint256[] memory values = new uint256[](len);
-		for (uint256 i; i < len; ++i) {
-			values[i] = ISFT($.gToken).balanceOf(address(this), ids[i]);
-		}
-
-		ISFT($.gToken).safeBatchTransferFrom(
-			address(this),
-			to,
-			ids,
-			values,
-			""
 		);
 	}
 
@@ -493,28 +262,37 @@ contract Launchpad is
 	//////////////////////////////////////////////////////////////*/
 
 	function workToken() public view returns (address) {
-		return IStaking(_launchpadStorage().staking).workToken();
-	}
-
-	function factory() public view returns (address) {
-		return _launchpadStorage().factory;
-	}
-
-	function campaignPair(
-		address campaign
-	) external view override returns (address) {
-		return _launchpadStorage().campaignPair[campaign];
-	}
-
-	function campaignRequiresSecurity(
-		address campaign
-	) external view override returns (bool) {
-		return _launchpadStorage().campaignRequiresSecurity[campaign];
+		return IStaking(_staking).workToken();
 	}
 
 	function userCampaignIds(
 		address user
 	) external view returns (uint256[] memory) {
-		return _launchpadStorage().userCampaignIds[user].values();
+		return _userCampaignIds[user].values();
+	}
+
+	function _update(
+		address from,
+		address to,
+		uint256[] memory ids,
+		uint256[] memory values
+	) internal override {
+		super._update(from, to, ids, values);
+
+		uint256 idsLength = ids.length;
+		for (uint256 i; i < idsLength; ) {
+			uint256 id = ids[i];
+
+			if (from != address(0) && balanceOf(from, id) == 0) {
+				_userCampaignIds[from].remove(id);
+			}
+			if (to != address(0) && balanceOf(to, id) > 0) {
+				_userCampaignIds[to].add(id);
+			}
+
+			unchecked {
+				++i;
+			}
+		}
 	}
 }

@@ -1,55 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity ^0.8.28;
 
-import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Campaign} from "../listing/Campaign.sol";
 
 import {ICampaign} from "../listing/ICampaign.sol";
 import {CampaignLib} from "../listing/CampaignLib.sol";
 
-abstract contract CampaignFactory is Initializable {
+abstract contract CampaignFactory {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
 	error CampaignAlreadyExists(address campaign);
 	error ZeroAddress();
 
-	/*//////////////////////////////////////////////////////////////
-                          ERC-7201 STORAGE
-    //////////////////////////////////////////////////////////////*/
-
-	/// @custom:storage-location erc7201:workit.contracts.listing.CampaignFactory
-	struct CampaignFactoryStorage {
-		EnumerableSet.AddressSet campaigns;
-		address campaignBeacon;
-		mapping(uint256 => address) campaignById;
-		mapping(address => mapping(address => address)) campaignByTokens;
-	}
-
-	// keccak256("workit.contracts.listing.CampaignFactory") & ~bytes32(uint256(0xff))
-	bytes32 internal constant CAMPAIGN_FACTORY_STORAGE_LOCATION =
-		0x55ec39cb73b6975b529d89257f46aecb5d9298a2898e64abc2a729fd8d21df00;
-
-	function _getCampaignFactoryStorage()
-		internal
-		pure
-		returns (CampaignFactoryStorage storage $)
-	{
-		assembly {
-			$.slot := CAMPAIGN_FACTORY_STORAGE_LOCATION
-		}
-	}
-
-	/*//////////////////////////////////////////////////////////////
-                             INITIALIZER
-    //////////////////////////////////////////////////////////////*/
-
-	function __CampaignFactory_init(
-		address campaignBeacon_
-	) internal onlyInitializing {
-		require(campaignBeacon_ != address(0), "InvalidBeacon");
-		_getCampaignFactoryStorage().campaignBeacon = campaignBeacon_;
-	}
+	EnumerableSet.AddressSet private _campaigns;
+	mapping(uint256 => address) public campaignById;
+	mapping(address => mapping(address => address)) public campaignByTokens;
 
 	/*//////////////////////////////////////////////////////////////
                          CREATION LOGIC
@@ -61,36 +27,37 @@ abstract contract CampaignFactory is Initializable {
 		ICampaign.Listing memory listing_
 	) internal returns (address campaign, uint256 campaignId) {
 		if (creator == address(0)) revert ZeroAddress();
-		bytes memory initData = abi.encodeWithSelector(
-			ICampaign.initialize.selector,
-			address(this),
-			gToken_,
-			listing_
+		bytes32 salt = keccak256(
+			abi.encodePacked(
+				creator,
+				address(this),
+				gToken_,
+				listing_.campaignToken,
+				listing_.fundingToken,
+				listing_.lockEpochs,
+				listing_.goal,
+				listing_.deadline
+			)
 		);
-		CampaignFactoryStorage storage $ = _getCampaignFactoryStorage();
-
-		// Create campaign first to derive deterministic ID
-		bytes32 salt = keccak256(abi.encodePacked(creator, initData));
-
 		campaign = address(
-			new BeaconProxy{salt: salt}($.campaignBeacon, initData)
+			new Campaign{salt: salt}(address(this), gToken_, listing_)
 		);
 
 		// Deterministic ID derived from deployed campaign address
 		campaignId = CampaignLib.tokenId(campaign);
 
-		if ($.campaignById[campaignId] != address(0)) {
-			revert CampaignAlreadyExists($.campaignById[campaignId]);
+		if (campaignById[campaignId] != address(0)) {
+			revert CampaignAlreadyExists(campaignById[campaignId]);
 		}
 
 		// Register campaign
-		$.campaigns.add(campaign);
-		$.campaignById[campaignId] = campaign;
+		_campaigns.add(campaign);
+		campaignById[campaignId] = campaign;
 
-		$.campaignByTokens[listing_.fundingToken][
+		campaignByTokens[listing_.fundingToken][
 			listing_.campaignToken
 		] = campaign;
-		$.campaignByTokens[listing_.campaignToken][
+		campaignByTokens[listing_.campaignToken][
 			listing_.fundingToken
 		] = campaign; // reverse
 	}
@@ -99,30 +66,19 @@ abstract contract CampaignFactory is Initializable {
                           VIEW HELPERS
     //////////////////////////////////////////////////////////////*/
 
-	function campaignById(uint256 campaignId) public view returns (address) {
-		return _getCampaignFactoryStorage().campaignById[campaignId];
-	}
-
-	function campaignByTokens(
-		address tokenA,
-		address tokenB
-	) public view returns (address) {
-		return _getCampaignFactoryStorage().campaignByTokens[tokenA][tokenB];
-	}
-
 	function campaigns() external view returns (address[] memory) {
-		return _getCampaignFactoryStorage().campaigns.values();
+		return _campaigns.values();
 	}
 
 	function totalCampaigns() external view returns (uint256) {
-		return _getCampaignFactoryStorage().campaigns.length();
+		return _campaigns.length();
 	}
 
 	function isCampaign(address campaign) public view returns (bool) {
-		return _getCampaignFactoryStorage().campaigns.contains(campaign);
+		return _campaigns.contains(campaign);
 	}
 
-	function campaignBeacon() public view returns (address) {
-		return _getCampaignFactoryStorage().campaignBeacon;
+	function _campaignsLength() internal view returns (uint256) {
+		return _campaigns.length();
 	}
 }

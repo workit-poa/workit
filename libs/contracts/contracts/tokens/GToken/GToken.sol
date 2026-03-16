@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
 import {GTokenLib} from "./GTokenLib.sol";
 import {HybridSFT} from "../../abstracts/HybridSFT.sol";
 import {Epochs} from "../../libraries/Epochs.sol";
@@ -11,7 +9,7 @@ import {Math} from "../../libraries/Math.sol";
 
 /// @title GToken Contract
 /// @notice WorkIt governance position token implemented as Hybrid HTS NFT + EVM metadata.
-contract GToken is IGToken, HybridSFT, UUPSUpgradeable {
+contract GToken is IGToken, HybridSFT {
 	using GTokenLib for IGToken.Attributes;
 	using GTokenLib for bytes;
 	using Epochs for Epochs.Storage;
@@ -19,51 +17,27 @@ contract GToken is IGToken, HybridSFT, UUPSUpgradeable {
 	bytes32 public constant UPDATE_ROLE = keccak256("UPDATE_ROLE");
 	bytes32 public constant BURN_ROLE = keccak256("BURN_ROLE");
 
-	/// @custom:storage-location erc7201:workit.GToken.storage
-	struct GTokenStorage {
-		uint256 totalStakeWeight;
-		mapping(address => uint256) pairSupply;
-		uint256 totalSupply;
-		Epochs.Storage epochs;
-	}
-
-	// keccak256("workit.contracts.tokens.GToken") & ~bytes32(uint256(0xff))
-	bytes32 private constant GTOKEN_STORAGE_LOCATION =
-		0x20efedbc46f7d0712b2c6ed605c3ff1c601a0f7073a5fa51fd93adb6a0f55300;
+	uint256 public override totalStakeWeight;
+	mapping(address => uint256) public override pairSupply;
+	uint256 public override totalSupply;
+	Epochs.Storage private _epochs;
 
 	error InvalidAddress();
 	error InvalidEpochLength();
 
-	/// @custom:oz-upgrades-unsafe-allow constructor
-	constructor() {
-		_disableInitializers();
-	}
-
-	function _getGTokenStorage()
-		private
-		pure
-		returns (GTokenStorage storage $)
-	{
-		assembly {
-			$.slot := GTOKEN_STORAGE_LOCATION
-		}
-	}
-
-	/// @notice Initializes the WorkIt GToken contract.
-	/// @param admin Admin for DEFAULT_ADMIN_ROLE and operational roles.
-	/// @param epochLength Epoch duration in seconds.
-	function initialize(address admin, uint256 epochLength) external initializer {
+	constructor(
+		address admin,
+		uint256 epochLength
+	) HybridSFT("WorkIt Governance Token", "WGT", admin) {
 		if (admin == address(0)) revert InvalidAddress();
 		if (epochLength == 0) revert InvalidEpochLength();
-
-		__HybridSFT_init("WorkIt Governance Token", "WGT", admin);
 
 		_grantRole(MINTER_ROLE, admin);
 		_grantRole(TRANSFER_ROLE, admin);
 		_grantRole(UPDATE_ROLE, admin);
 		_grantRole(BURN_ROLE, admin);
 
-		_getGTokenStorage().epochs.initialize(epochLength);
+		_epochs.initialize(epochLength);
 	}
 
 	/// @notice Mints a new GToken position for the given address.
@@ -73,7 +47,7 @@ contract GToken is IGToken, HybridSFT, UUPSUpgradeable {
 		uint256 epochsLocked,
 		LiquidityInfo memory lpDetails
 	) external onlyRole(MINTER_ROLE) returns (uint256) {
-		uint256 currentEpoch = _getGTokenStorage().epochs.currentEpoch();
+		uint256 currentEpoch = _epochs.currentEpoch();
 
 		IGToken.Attributes memory attributes = IGToken
 			.Attributes({
@@ -115,13 +89,11 @@ contract GToken is IGToken, HybridSFT, UUPSUpgradeable {
 	) external onlyRole(UPDATE_ROLE) returns (uint256) {
 		require(balanceOf(user, nonce) > 0, "Not found");
 
-		GTokenStorage storage $ = _getGTokenStorage();
+		IGToken.Attributes memory existing = getRawTokenAttributes[nonce].decode();
+		totalStakeWeight -= existing.stakeWeight;
 
-		IGToken.Attributes memory existing = getRawTokenAttributes(nonce).decode();
-		$.totalStakeWeight -= existing.stakeWeight;
-
-		attr = attr.computeStakeWeight($.epochs.currentEpoch());
-		$.totalStakeWeight += attr.stakeWeight;
+		attr = attr.computeStakeWeight(_epochs.currentEpoch());
+		totalStakeWeight += attr.stakeWeight;
 		_updateTokenAttributes(user, nonce, abi.encode(attr));
 
 		return nonce;
@@ -134,17 +106,17 @@ contract GToken is IGToken, HybridSFT, UUPSUpgradeable {
 		uint256 amount = balanceOf(user, nonce);
 		require(amount > 0, "No GToken balance found at nonce for user");
 
-		return _packageBalance(nonce, amount, getRawTokenAttributes(nonce));
+		return _packageBalance(nonce, amount, getRawTokenAttributes[nonce]);
 	}
 
 	function getAttributes(
 		uint256 nonce
 	) external view returns (IGToken.Attributes memory) {
-		return getRawTokenAttributes(nonce).decode();
+		return getRawTokenAttributes[nonce].decode();
 	}
 
 	function epochs() external view returns (Epochs.Storage memory) {
-		return _getGTokenStorage().epochs;
+		return _epochs;
 	}
 
 	function _packageBalance(
@@ -153,9 +125,7 @@ contract GToken is IGToken, HybridSFT, UUPSUpgradeable {
 		bytes memory attr
 	) private view returns (Balance memory) {
 		IGToken.Attributes memory attrUnpacked = attr.decode();
-		uint256 votePower = attrUnpacked.votePower(
-			_getGTokenStorage().epochs.currentEpoch()
-		);
+		uint256 votePower = attrUnpacked.votePower(_epochs.currentEpoch());
 
 		return
 			Balance({
@@ -277,34 +247,17 @@ contract GToken is IGToken, HybridSFT, UUPSUpgradeable {
 		uint256 stakeWeight = attr.stakeWeight;
 		address pair = attr.lpDetails.pair;
 
-		GTokenStorage storage $ = _getGTokenStorage();
-
 		if (from == address(0)) {
-			$.totalStakeWeight += stakeWeight;
-			$.totalSupply += value;
-			$.pairSupply[pair] += value;
+			totalStakeWeight += stakeWeight;
+			totalSupply += value;
+			pairSupply[pair] += value;
 		} else if (to == address(0)) {
-			$.totalStakeWeight -= stakeWeight;
-			$.totalSupply -= value;
-			$.pairSupply[pair] -= value;
+			totalStakeWeight -= stakeWeight;
+			totalSupply -= value;
+			pairSupply[pair] -= value;
 		}
 
 		emit GTokenTransfer(from, to, id, stakeWeight, value);
 	}
 
-	function pairSupply(address pair) public view returns (uint256) {
-		return _getGTokenStorage().pairSupply[pair];
-	}
-
-	function totalSupply() external view returns (uint256) {
-		return _getGTokenStorage().totalSupply;
-	}
-
-	function totalStakeWeight() public view returns (uint256) {
-		return _getGTokenStorage().totalStakeWeight;
-	}
-
-	function _authorizeUpgrade(
-		address
-	) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }

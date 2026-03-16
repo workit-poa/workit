@@ -1,28 +1,26 @@
 {
-  "address": "0x6e189a16Af74561231AC9563107FaC8982b6c643",
+  "address": "0xe50c001e5c5c430AA5C6931913144fE6cBF3BE25",
   "abi": [
     {
-      "inputs": [],
-      "name": "InvalidInitialization",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NotInitializing",
-      "type": "error"
-    },
-    {
-      "anonymous": false,
       "inputs": [
         {
-          "indexed": false,
-          "internalType": "uint64",
-          "name": "version",
-          "type": "uint64"
+          "internalType": "address",
+          "name": "workToken_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "gToken_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "workEmissionController_",
+          "type": "address"
         }
       ],
-      "name": "Initialized",
-      "type": "event"
+      "stateMutability": "nonpayable",
+      "type": "constructor"
     },
     {
       "anonymous": false,
@@ -158,29 +156,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_workToken",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "_gToken",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "_workEmissionController",
-          "type": "address"
-        }
-      ],
-      "name": "initialize",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
