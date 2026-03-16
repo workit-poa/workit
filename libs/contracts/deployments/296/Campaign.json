@@ -1,5 +1,5 @@
 {
-  "address": "0x17d1771610B86f9089aEE827925461Db90c24056",
+  "address": "0xC16044D5CFfAC547782f33dc86D78831D58d6540",
   "abi": [
     {
       "inputs": [
@@ -370,6 +370,33 @@
       "inputs": [
         {
           "internalType": "address",
+          "name": "fundingToken",
+          "type": "address"
+        }
+      ],
+      "name": "UnsupportedNativeFundingToken",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "value",
+          "type": "uint256"
+        }
+      ],
+      "name": "WrappedNativeDepositFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
           "name": "addr",
           "type": "address"
         }
@@ -520,10 +547,23 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        }
+      ],
+      "name": "contributeHbar",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "deployPair",
       "outputs": [],
-      "stateMutability": "nonpayable",
+      "stateMutability": "payable",
       "type": "function"
     },
     {
@@ -753,7 +793,7 @@
           "type": "uint8"
         }
       ],
-      "stateMutability": "nonpayable",
+      "stateMutability": "payable",
       "type": "function"
     },
     {

@@ -2,6 +2,7 @@
 pragma solidity =0.8.28;
 
 import {IUniswapV2Pair} from "../interfaces/IUniswapV2Pair.sol";
+import {IUniswapV2Factory} from "../interfaces/IUniswapV2Factory.sol";
 
 /// @title UniswapV2Library
 /// @notice Stateless helper functions used by Uniswap V2 routers
@@ -28,13 +29,15 @@ library UniswapV2Library {
 	                       PAIR ADDRESS LOGIC
 	//////////////////////////////////////////////////////////////*/
 
-	/// @notice Computes CREATE2 pair address without external calls
+	/// @notice Computes CREATE2 pair address using factory's init code hash.
 	function pairFor(
 		address factory,
 		address tokenA,
 		address tokenB
-	) internal pure returns (address pair) {
+	) internal view returns (address pair) {
 		(address token0, address token1) = sortTokens(tokenA, tokenB);
+		bytes32 initCodePairHash = IUniswapV2Factory(factory)
+			.INIT_CODE_PAIR_HASH();
 
 		pair = address(
 			uint160(
@@ -44,7 +47,7 @@ library UniswapV2Library {
 							hex"ff",
 							factory,
 							keccak256(abi.encodePacked(token0, token1)),
-							hex"5eea232fa3e5cd6a1f62e56eec46b17c23c92f61fd7c0db0589f6eec71dfe159"
+							initCodePairHash
 						)
 					)
 				)

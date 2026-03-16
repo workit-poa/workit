@@ -15,6 +15,10 @@ export interface LaunchpadCampaignView {
   statusLabel: CampaignStatusLabel;
   deadlineUnix: number;
   isParticipatable: boolean;
+  hasParticipated: boolean;
+  userContributionRaw: string;
+  canClaim: boolean;
+  canRefund: boolean;
   goal: string;
   fundingSupply: string;
   campaignSupply: string;
@@ -23,7 +27,7 @@ export interface LaunchpadCampaignView {
 }
 
 export interface SponsoredTxResult {
-  type: "associate" | "wrap_hbar" | "approve" | "contribute";
+  type: "associate" | "wrap_hbar" | "approve" | "contribute" | "redeem" | "refund";
   transactionId: string;
   mirrorLink: string;
 }
@@ -59,4 +63,11 @@ export interface ParticipateCampaignResult {
   amountRaw: string;
   fundingToken: string;
   transactions: SponsoredTxResult[];
+}
+
+export interface SettleCampaignParticipationResult {
+  campaignAddress: string;
+  action: "redeem" | "refund";
+  amountRaw: string;
+  transaction: SponsoredTxResult;
 }

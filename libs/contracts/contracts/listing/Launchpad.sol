@@ -157,7 +157,7 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 	                     PAIR DEPLOYMENT
 	//////////////////////////////////////////////////////////////*/
 
-	function deployPair() external onlyCampaigns {
+	function deployPair() external payable onlyCampaigns returns (address pair) {
 		ICampaign campaign = ICampaign(msg.sender);
 
 		address existingPair = campaignPair[address(campaign)];
@@ -167,12 +167,14 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 		ICampaign.Listing memory listing = campaign.listing();
 		address fundingToken = campaign.fundingErc20Token();
 
-		address pair = UniswapV2Library.pairFor(
+		pair = UniswapV2Library.pairFor(
 			factory,
 			listing.campaignToken,
 			fundingToken
 		);
-		address createdPair = IUniswapV2Factory(factory).createPair(
+		address createdPair = IUniswapV2Factory(factory).createPair{
+			value: msg.value
+		}(
 			listing.campaignToken,
 			fundingToken
 		);
@@ -183,8 +185,15 @@ contract Launchpad is Ownable, ERC1155, ILaunchpad, CampaignFactory, IERC1155Rec
 			);
 
 		campaignPair[address(campaign)] = createdPair;
-
 		associateTokenIfNeeded(createdPair);
+	}
+
+	function stakeCampaignPair() external onlyCampaigns {
+		ICampaign campaign = ICampaign(msg.sender);
+		address pair = campaignPair[address(campaign)];
+		if (pair == address(0)) revert PairNotDeployed(address(campaign));
+
+		ICampaign.Listing memory listing = campaign.listing();
 		uint256 liquidity = IUniswapV2Pair(pair).mint(address(this));
 		IERC20(pair).forceApprove(_staking, liquidity);
 

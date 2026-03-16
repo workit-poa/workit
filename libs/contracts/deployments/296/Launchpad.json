@@ -1,5 +1,5 @@
 {
-  "address": "0x39F6D1052d3cc3444d6903c64A633e4509e368A4",
+  "address": "0x35E053fF443fB5FD4D7FC7503a0b14Be48D57bD3",
   "abi": [
     {
       "inputs": [
@@ -867,7 +867,7 @@
       "inputs": [],
       "name": "deployPair",
       "outputs": [],
-      "stateMutability": "nonpayable",
+      "stateMutability": "payable",
       "type": "function"
     },
     {

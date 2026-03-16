@@ -6,6 +6,13 @@ export type RevertDecodingInterface = {
 	) => { name: string; args: readonly unknown[] } | null;
 };
 
+function normalizeInterfaces(
+	interfaces?: RevertDecodingInterface | RevertDecodingInterface[],
+): RevertDecodingInterface[] {
+	if (!interfaces) return [];
+	return Array.isArray(interfaces) ? interfaces : [interfaces];
+}
+
 function toErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -41,13 +48,13 @@ export function extractRevertData(error: unknown): string | null {
 
 export function decodeRevertData(
 	data: string,
-	contractInterface?: RevertDecodingInterface,
+	interfaces?: RevertDecodingInterface | RevertDecodingInterface[],
 ): string {
 	if (!data || data === "0x") {
 		return "empty revert data";
 	}
 
-	if (contractInterface) {
+	for (const contractInterface of normalizeInterfaces(interfaces)) {
 		try {
 			const parsed = contractInterface.parseError(data);
 			if (parsed) {
@@ -59,7 +66,7 @@ export function decodeRevertData(
 				return `${parsed.name}(${args})`;
 			}
 		} catch {
-			// Continue to generic decoders.
+			// Try the next interface.
 		}
 	}
 
@@ -89,11 +96,11 @@ export function decodeRevertData(
 export function formatDecodedRevert(
 	action: string,
 	error: unknown,
-	contractInterface?: RevertDecodingInterface,
+	interfaces?: RevertDecodingInterface | RevertDecodingInterface[],
 ): Error {
 	const revertData = extractRevertData(error);
 	const decoded = revertData
-		? decodeRevertData(revertData, contractInterface)
+		? decodeRevertData(revertData, interfaces)
 		: "no revert data found";
 	return new Error(
 		`${action} failed: ${decoded}. Original error: ${toErrorMessage(error)}`,

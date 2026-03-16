@@ -17,7 +17,6 @@ import {ISFT} from "../abstracts/ISFT.sol";
 import {GTokenLib} from "../tokens/GToken/GTokenLib.sol";
 
 import {FullMath} from "../libraries/FullMath.sol";
-import {UniswapV2Library} from "../libraries/UniswapV2Library.sol";
 import {CampaignLib} from "./CampaignLib.sol";
 
 /// @notice Campaign contract for liquidity / pair launch funding
@@ -130,6 +129,32 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 		_contribute(amount, to, _launchpad);
 	}
 
+	function contributeHbar(
+		address to
+	) external payable notExpired inStatus(Status.Funding) {
+		if (msg.value == 0) revert ZeroContribution(msg.value);
+
+		Listing memory listing_ = _listing;
+		address fundingToken = _fundingErc20Token();
+		if (fundingToken == listing_.fundingToken)
+			revert UnsupportedNativeFundingToken(listing_.fundingToken);
+
+		_associateTokenIfRequired(fundingToken);
+
+		uint256 balanceBefore = IERC20(fundingToken).balanceOf(address(this));
+		(bool success, ) = listing_.fundingToken.call{value: msg.value}(
+			abi.encodeWithSignature("deposit()")
+		);
+		if (!success)
+			revert WrappedNativeDepositFailed(listing_.fundingToken, msg.value);
+
+		uint256 balanceAfter = IERC20(fundingToken).balanceOf(address(this));
+		uint256 amount = balanceAfter - balanceBefore;
+		if (amount == 0) revert ZeroContribution(amount);
+
+		_contribute(amount, to, _launchpad);
+	}
+
 	function _associateTokenIfRequired(address token) internal {
 		try IHRC719(token).associate() returns (uint256 responseCode) {
 			uint256 successCode = uint256(int256(HederaResponseCodes.SUCCESS));
@@ -237,7 +262,7 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 		IERC20(_fundingErc20Token()).transfer(to, contribution);
 	}
 
-	function deployPair() public inStatus(Status.Funding) {
+	function deployPair() public payable inStatus(Status.Funding) {
 		Listing memory listing_ = _listing;
 
 		if (block.timestamp < listing_.deadline) {
@@ -249,16 +274,11 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 
 		address launchpad = _launchpad;
 		address fundingToken = _fundingErc20Token();
-		address pair = UniswapV2Library.pairFor(
-			ILaunchpad(launchpad).factory(),
-			listing_.campaignToken,
-			fundingToken
-		);
+		address pair = ILaunchpad(launchpad).deployPair{value: msg.value}();
 
 		IERC20(listing_.campaignToken).transfer(pair, campaignSupply());
 		IERC20(fundingToken).transfer(pair, fundingSupply());
-
-		ILaunchpad(launchpad).deployPair();
+		ILaunchpad(launchpad).stakeCampaignPair();
 
 		status = Status.Success;
 	}
@@ -278,7 +298,9 @@ contract Campaign is ICampaign, Ownable, IERC1155Receiver {
 		return Status.Failed;
 	}
 
-	function resolveCampaign(address to) external onlyOwner returns (Status) {
+	function resolveCampaign(
+		address to
+	) external payable onlyOwner returns (Status) {
 		Status currentStatus = status;
 
 		if (currentStatus == Status.Pending) {

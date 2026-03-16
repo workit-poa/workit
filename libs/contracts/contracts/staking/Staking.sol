@@ -57,6 +57,18 @@ contract Staking is IStaking, Ownable {
 		}
 	}
 
+	function _routerWhbar() internal view returns (address whbarAddress) {
+		try IUniswapV2Router(_router).WHBAR() returns (address whbar_) {
+			return whbar_;
+		} catch {
+			try IUniswapV2Router(_router).whbar() returns (address whbar_) {
+				return whbar_;
+			} catch {
+				revert UnsupportedRouterWhbar();
+			}
+		}
+	}
+
 	function _requirePairContainsWork(
 		address tokenA,
 		address tokenB
@@ -157,6 +169,48 @@ contract Staking is IStaking, Ownable {
 		}
 	}
 
+	function _addLiquidityEth(
+		address token,
+		uint256 amountTokenDesired,
+		uint256 amountTokenMin,
+		uint256 amountHbarMin,
+		uint256 amountHbarDesired
+	) internal returns (IGToken.LiquidityInfo memory liqInfo) {
+		address whbar = _routerWhbar();
+		_requirePairContainsWork(token, whbar);
+
+		liqInfo.pair = IUniswapV2Factory(_factory).getPair(token, whbar);
+		if (liqInfo.pair == address(0)) revert PairNotFound();
+
+		IERC20(token).approve(_router, amountTokenDesired);
+		(
+			uint256 amountToken,
+			uint256 amountHbar,
+			uint256 liquidity
+		) = IUniswapV2Router(_router).addLiquidityETH{
+			value: amountHbarDesired
+		}(
+			token,
+			amountTokenDesired,
+			amountTokenMin,
+			amountHbarMin,
+			address(this),
+			block.timestamp
+		);
+
+		liqInfo.liquidity = liquidity;
+
+		if (amountTokenDesired > amountToken) {
+			IERC20(token).transfer(msg.sender, amountTokenDesired - amountToken);
+		}
+		if (amountHbarDesired > amountHbar) {
+			(bool refunded, ) = payable(msg.sender).call{
+				value: amountHbarDesired - amountHbar
+			}("");
+			if (!refunded) revert NativeTransferFailed();
+		}
+	}
+
 	/*//////////////////////////////////////////////////////////////
 	                            STAKING
 	//////////////////////////////////////////////////////////////*/
@@ -200,6 +254,28 @@ contract Staking is IStaking, Ownable {
 		IGToken.LiquidityInfo memory liqInfo;
 		liqInfo.pair = pair;
 		liqInfo.liquidity = liquidity;
+
+		_stakeLiquidity(liqInfo, to, epochsLocked);
+	}
+
+	function stakeTokenHbarLiquidity(
+		address token,
+		uint256 amountTokenDesired,
+		uint256 amountTokenMin,
+		uint256 amountHbarMin,
+		address to,
+		uint256 epochsLocked
+	) external payable override {
+		if (msg.value == 0) revert ZeroAmount();
+		_pullToken(token, amountTokenDesired);
+
+		IGToken.LiquidityInfo memory liqInfo = _addLiquidityEth(
+			token,
+			amountTokenDesired,
+			amountTokenMin,
+			amountHbarMin,
+			msg.value
+		);
 
 		_stakeLiquidity(liqInfo, to, epochsLocked);
 	}
@@ -577,5 +653,7 @@ contract Staking is IStaking, Ownable {
 	/*//////////////////////////////////////////////////////////////
 	                               VIEWS
 	//////////////////////////////////////////////////////////////*/
+
+	receive() external payable {}
 
 }

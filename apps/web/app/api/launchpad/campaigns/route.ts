@@ -13,8 +13,10 @@ function toErrorResponse(error: unknown) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireSessionUser(request);
-    const campaigns = await getLaunchpadCampaigns();
+    const user = await requireSessionUser(request);
+    const campaigns = await getLaunchpadCampaigns({
+      userHederaAccountId: user.hederaAccountId
+    });
     return NextResponse.json({ campaigns });
   } catch (error) {
     return toErrorResponse(error);

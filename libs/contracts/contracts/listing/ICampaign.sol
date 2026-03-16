@@ -53,6 +53,8 @@ interface ICampaign {
 	error InvalidGTokenSender();
 	error MergeFailed();
 	error TokenAssociationFailed(address token, uint256 responseCode);
+	error UnsupportedNativeFundingToken(address fundingToken);
+	error WrappedNativeDepositFailed(address token, uint256 value);
 
 	/*//////////////////////////////////////////////////////////////
 	                           EVENTS
@@ -67,6 +69,10 @@ interface ICampaign {
 	/// @notice ERC20 contribution
 	function contribute(uint256 amount, address to) external;
 
+	/// @notice Native HBAR contribution for campaigns funded in wrapped HBAR.
+	/// @dev Internally wraps HBAR into the configured funding token and mints claim units from received wrapped balance.
+	function contributeHbar(address to) external payable;
+
 	/// @notice Associates this campaign contract with listing tokens when required by HTS.
 	/// @dev Safe to call multiple times.
 	function associateListingTokens() external;
@@ -76,10 +82,10 @@ interface ICampaign {
 	//////////////////////////////////////////////////////////////*/
 
 	/// @notice Deploy liquidity pair after funding completes
-	function deployPair() external;
+	function deployPair() external payable;
 
 	/// @notice Owner-driven resolution (normal path)
-	function resolveCampaign(address to) external returns (Status);
+	function resolveCampaign(address to) external payable returns (Status);
 
 	/// @notice Redeem claim token for liquidity after success
 	function redeemContribution(

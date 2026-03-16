@@ -20,6 +20,10 @@
     "deploy:testnet": "hardhat compile && hardhat run scripts/deploy.ts --network hederaTestnet",
     "deploy:previewnet": "hardhat run scripts/deploy.ts --network hederaPreviewnet",
     "deploy:mainnet": "hardhat run scripts/deploy.ts --network hederaMainnet",
+    "resolve:local": "hardhat run scripts/resolve-campaigns.ts --network hederaLocal",
+    "resolve:testnet": "hardhat run scripts/resolve-campaigns.ts --network hederaTestnet",
+    "resolve:previewnet": "hardhat run scripts/resolve-campaigns.ts --network hederaPreviewnet",
+    "resolve:mainnet": "hardhat run scripts/resolve-campaigns.ts --network hederaMainnet",
     "hcs:local": "tsx scripts/hcs-local.ts",
     "hts:local": "tsx scripts/hts-local.ts"
   },

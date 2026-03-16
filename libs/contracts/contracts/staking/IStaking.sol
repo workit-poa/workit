@@ -16,6 +16,8 @@ interface IStaking {
 	error InsufficientLiquidity();
 	error InvalidSwapAmount();
 	error ZeroRecipient();
+	error NativeTransferFailed();
+	error UnsupportedRouterWhbar();
 
 	/*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -77,6 +79,16 @@ interface IStaking {
 		address to,
 		uint256 epochsLocked
 	) external;
+
+	/// @notice Stake token-HBAR liquidity via Saucerswap router native path.
+	function stakeTokenHbarLiquidity(
+		address token,
+		uint256 amountTokenDesired,
+		uint256 amountTokenMin,
+		uint256 amountHbarMin,
+		address to,
+		uint256 epochsLocked
+	) external payable;
 
 	/// @notice Stake already minted LP tokens
 	function stakeLiquidityIn(

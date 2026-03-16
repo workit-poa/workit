@@ -52,6 +52,7 @@ export function LaunchpadPanel() {
   const [campaigns, setCampaigns] = useState<LaunchpadCampaignView[]>([]);
   const [amountByCampaign, setAmountByCampaign] = useState<Record<string, string>>({});
   const [submittingCampaign, setSubmittingCampaign] = useState<string | null>(null);
+  const [settlingCampaign, setSettlingCampaign] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [txByCampaign, setTxByCampaign] = useState<Record<string, SponsoredTxResult[]>>({});
   const [previewByCampaign, setPreviewByCampaign] = useState<Record<string, CampaignContributionPreview>>({});
@@ -92,6 +93,10 @@ export function LaunchpadPanel() {
   }, [fetchCampaigns]);
 
   const availableCampaigns = useMemo(() => campaigns.filter(campaign => campaign.isParticipatable), [campaigns]);
+  const participatedCampaigns = useMemo(
+    () => campaigns.filter(campaign => campaign.hasParticipated),
+    [campaigns]
+  );
 
   const participate = useCallback(
     async (campaign: LaunchpadCampaignView) => {
@@ -197,6 +202,46 @@ export function LaunchpadPanel() {
     [amountByCampaign, fetchCampaigns, previewByCampaign, setCampaignStage, stageByCampaign]
   );
 
+  const settleParticipation = useCallback(
+    async (campaign: LaunchpadCampaignView) => {
+      setSettlingCampaign(campaign.campaignAddress);
+      setActionErrors(prev => ({
+        ...prev,
+        [campaign.campaignAddress]: ""
+      }));
+
+      try {
+        const response = await fetch(`/api/launchpad/campaigns/${campaign.campaignAddress}/settle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        const payload = (await response.json()) as {
+          transaction?: SponsoredTxResult;
+          error?: string;
+        };
+        if (!response.ok || !payload.transaction) {
+          throw new Error(typeof payload.error === "string" ? payload.error : "Failed to settle participation");
+        }
+
+        setTxByCampaign(prev => ({
+          ...prev,
+          [campaign.campaignAddress]: [payload.transaction as SponsoredTxResult]
+        }));
+
+        await fetchCampaigns();
+      } catch (settleError) {
+        setActionErrors(prev => ({
+          ...prev,
+          [campaign.campaignAddress]:
+            settleError instanceof Error ? settleError.message : "Failed to settle participation"
+        }));
+      } finally {
+        setSettlingCampaign(null);
+      }
+    },
+    [fetchCampaigns]
+  );
+
   const getButtonLabel = useCallback(
     (campaignAddress: string): string => {
       const stage = stageByCampaign[campaignAddress] || "idle";
@@ -238,6 +283,54 @@ export function LaunchpadPanel() {
             <AlertTitle>No active campaigns</AlertTitle>
             <AlertDescription>No WRK launchpad campaign is currently open for contributions.</AlertDescription>
           </Alert>
+        )}
+
+        {!loading && !error && participatedCampaigns.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">My Participations</p>
+            {participatedCampaigns.map(campaign => (
+              <div
+                key={`participation-${campaign.campaignAddress}`}
+                className="rounded-lg border border-border/70 bg-background/50 p-3 text-sm"
+              >
+                <p className="font-medium text-foreground">
+                  {campaign.fundingToken.symbol}/{campaign.campaignToken.symbol}
+                </p>
+                <p className="text-muted-foreground">
+                  Contributed:{" "}
+                  {formatTokenAmount(campaign.userContributionRaw, campaign.fundingToken.decimals)}{" "}
+                  {campaign.fundingToken.symbol}
+                </p>
+                <p className="text-muted-foreground">Status: {campaign.statusLabel}</p>
+                <p className="text-muted-foreground">
+                  {campaign.canClaim
+                    ? "Ready to claim GTokens."
+                    : campaign.canRefund
+                      ? "Ready to refund contribution."
+                      : "Resolution pending before claim/refund."}
+                </p>
+                {(campaign.canClaim || campaign.canRefund) && (
+                  <Button
+                    className="mt-2"
+                    onClick={() => void settleParticipation(campaign)}
+                    disabled={settlingCampaign === campaign.campaignAddress}
+                    size="sm"
+                  >
+                    {settlingCampaign === campaign.campaignAddress
+                      ? campaign.canClaim
+                        ? "Redeeming..."
+                        : "Refunding..."
+                      : campaign.canClaim
+                        ? "Redeem Contribution"
+                        : "Refund Contribution"}
+                  </Button>
+                )}
+                {actionErrors[campaign.campaignAddress] && (
+                  <p className="mt-2 text-sm text-destructive">{actionErrors[campaign.campaignAddress]}</p>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
         {!loading &&

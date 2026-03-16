@@ -7,6 +7,7 @@ interface ILaunchpad {
 	error OnlyCampaigns(address caller);
 	error NotCampaignMigrator(address caller, address migrator);
 	error PairAlreadyDeployed(address campaign, address pair);
+	error PairNotDeployed(address campaign);
 	error PairDeploymentFailed(address token0, address token1);
 	error ZeroMigrator(address migrator);
 	error ZeroCampaignToken(address token);
@@ -47,7 +48,9 @@ interface ILaunchpad {
 
 	function burn(address from, uint256 amount) external;
 
-	function deployPair() external;
+	function deployPair() external payable returns (address pair);
+
+	function stakeCampaignPair() external;
 
 	function createCampaign(
 		ICampaign.Listing memory listing,

@@ -62,12 +62,13 @@ export function buildContributionPreview(params: {
   nativeHbarBalance: bigint;
   allowance: bigint;
 }): CampaignContributionPreview {
-  const wrapAmount = params.config.isWhbarFundingToken
-    ? computeWrapShortfall({
+  const wrapAmount = 0n;
+  const approvalRequired = params.config.isWhbarFundingToken
+    ? false
+    : isApprovalNeeded({
+        allowance: params.allowance,
         requiredAmount: params.config.amountRaw,
-        whbarBalance: params.whbarBalance,
-      })
-    : 0n;
+      });
 
   return {
     campaignAddress: params.config.campaignAddress,
@@ -80,10 +81,7 @@ export function buildContributionPreview(params: {
     nativeHbarBalanceRaw: params.nativeHbarBalance.toString(),
     nativeHbarReserveRaw: params.config.nativeHbarReserveRaw.toString(),
     wrapAmountRaw: wrapAmount.toString(),
-    approvalRequired: isApprovalNeeded({
-      allowance: params.allowance,
-      requiredAmount: params.config.amountRaw,
-    }),
+    approvalRequired,
     allowanceRaw: params.allowance.toString(),
   };
 }
@@ -165,12 +163,11 @@ export async function prepareCampaignContribution(params: {
     allowance,
   });
 
-  const wrapAmount = BigInt(preview.wrapAmountRaw);
-  if (preview.usesWhbarFunding && wrapAmount > 0n) {
-    const totalNativeRequired = wrapAmount + params.config.nativeHbarReserveRaw;
+  if (preview.usesWhbarFunding) {
+    const totalNativeRequired = params.config.amountRaw + params.config.nativeHbarReserveRaw;
     if (nativeHbarBalance < totalNativeRequired) {
       throw new Error(
-        `Insufficient native HBAR to wrap contribution shortfall. Need at least ${totalNativeRequired.toString()} tinybars including reserve, have ${nativeHbarBalance.toString()} tinybars.`,
+        `Insufficient native HBAR for contribution. Need at least ${totalNativeRequired.toString()} tinybars including reserve, have ${nativeHbarBalance.toString()} tinybars.`,
       );
     }
   }
@@ -190,63 +187,55 @@ export async function executeCampaignContribution(params: {
   const transactions: SponsoredTxResult[] = [];
 
   if (preview.usesWhbarFunding) {
-    const wrapAmount = BigInt(preview.wrapAmountRaw);
-    if (wrapAmount > 0n) {
-      if (params.runtime.writes.associateFundingToken) {
-        try {
-          const associationTx = await params.runtime.writes.associateFundingToken();
-          if (associationTx) {
-            transactions.push(associationTx);
-          }
-        } catch (error) {
-          throw classifyContributionError({ stage: "associate", error });
-        }
-      }
-
+    try {
+      transactions.push(
+        await params.runtime.writes.contribute(params.config.amountRaw, params.config.recipient),
+      );
+    } catch (error) {
+      throw classifyContributionError({ stage: "contribute", error });
+    }
+  } else {
+    const allowanceBeforeApprove = await params.runtime.reads.readAllowance();
+    if (isApprovalNeeded({ allowance: allowanceBeforeApprove, requiredAmount: params.config.amountRaw })) {
       try {
-        transactions.push(await params.runtime.writes.wrapHbar(wrapAmount));
+        transactions.push(await params.runtime.writes.approveFundingToken(params.config.amountRaw));
       } catch (error) {
-        throw classifyContributionError({ stage: "wrap", error });
+        throw classifyContributionError({ stage: "approve", error });
       }
     }
 
-    // Re-read to guard against stale state before contribution execution.
-    const whbarBalance = await pollUntil({
-      read: params.runtime.reads.readWhbarBalance,
+    const finalAllowance = await pollUntil({
+      read: params.runtime.reads.readAllowance,
       target: params.config.amountRaw,
     });
-    if (whbarBalance < params.config.amountRaw) {
+    if (finalAllowance < params.config.amountRaw) {
       throw new Error(
-        `WHBAR balance is insufficient after wrapping. Need ${params.config.amountRaw.toString()}, have ${whbarBalance.toString()}.`,
+        `Funding token allowance is insufficient. Need ${params.config.amountRaw.toString()}, have ${finalAllowance.toString()}.`,
       );
     }
-  }
 
-  const allowanceBeforeApprove = await params.runtime.reads.readAllowance();
-  if (isApprovalNeeded({ allowance: allowanceBeforeApprove, requiredAmount: params.config.amountRaw })) {
     try {
-      transactions.push(await params.runtime.writes.approveFundingToken(params.config.amountRaw));
+      transactions.push(
+        await params.runtime.writes.contribute(params.config.amountRaw, params.config.recipient),
+      );
     } catch (error) {
-      throw classifyContributionError({ stage: "approve", error });
+      throw classifyContributionError({ stage: "contribute", error });
     }
-  }
 
-  const finalAllowance = await pollUntil({
-    read: params.runtime.reads.readAllowance,
-    target: params.config.amountRaw,
-  });
-  if (finalAllowance < params.config.amountRaw) {
-    throw new Error(
-      `Funding token allowance is insufficient. Need ${params.config.amountRaw.toString()}, have ${finalAllowance.toString()}.`,
-    );
-  }
+    if (params.runtime.refetchAfterSuccess) {
+      await params.runtime.refetchAfterSuccess();
+    }
 
-  try {
-    transactions.push(
-      await params.runtime.writes.contribute(params.config.amountRaw, params.config.recipient),
-    );
-  } catch (error) {
-    throw classifyContributionError({ stage: "contribute", error });
+    return {
+      preview: {
+        ...preview,
+        approvalRequired: isApprovalNeeded({
+          allowance: allowanceBeforeApprove,
+          requiredAmount: params.config.amountRaw,
+        }),
+      },
+      transactions,
+    };
   }
 
   if (params.runtime.refetchAfterSuccess) {
@@ -254,13 +243,7 @@ export async function executeCampaignContribution(params: {
   }
 
   return {
-    preview: {
-      ...preview,
-      approvalRequired: isApprovalNeeded({
-        allowance: allowanceBeforeApprove,
-        requiredAmount: params.config.amountRaw,
-      }),
-    },
+    preview,
     transactions,
   };
 }

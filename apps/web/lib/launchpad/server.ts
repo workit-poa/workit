@@ -25,10 +25,12 @@ import {
 import {
     Contract,
     Interface,
+    Wallet,
     type InterfaceAbi,
     getAddress,
     getBytes,
     isAddress,
+    solidityPackedKeccak256,
     parseUnits,
     type JsonRpcProvider,
 } from "ethers";
@@ -38,6 +40,7 @@ import type {
     CampaignContributionPreview,
     LaunchpadCampaignView,
     ParticipateCampaignResult,
+    SettleCampaignParticipationResult,
     SponsoredTxResult,
 } from "./types";
 import {
@@ -60,14 +63,18 @@ const ERC20_ABI = [
     "function approve(address spender,uint256 amount) returns (bool)",
 ];
 const erc20Interface = new Interface(ERC20_ABI);
+const PAIR_FEE_FACTORY_ABI = ["function pairCreateFee() view returns (uint256)"];
 
 const HBAR_WEI_DECIMALS = 18n;
-const HBAR_TO_WEI_MULTIPLIER = 10n ** (HBAR_WEI_DECIMALS - BigInt(HBAR_DECIMALS));
+const HBAR_TO_WEI_MULTIPLIER =
+    10n ** (HBAR_WEI_DECIMALS - BigInt(HBAR_DECIMALS));
 const deploymentContractCache = new Map<
     string,
     Promise<ResolvedDeploymentContracts>
 >();
 const warnedCampaignReadFailures = new Set<string>();
+const warnedCampaignResolveFailures = new Set<string>();
+const pairCreateFeeCache = new Map<string, Promise<bigint>>();
 
 interface TokenMetadata {
     address: string;
@@ -81,6 +88,11 @@ interface CampaignListing {
     lockEpochs: bigint;
     goal: bigint;
     deadline: bigint;
+}
+
+interface LaunchpadResolverContext {
+    signer: Wallet;
+    address: string;
 }
 
 interface SponsoredExecutionResult {
@@ -137,6 +149,13 @@ interface MirrorAccountAllowancesResponse {
 
 interface MirrorAccountResponse {
     account?: unknown;
+}
+
+interface MirrorExchangeRateResponse {
+    current_rate?: {
+        cent_equivalent?: unknown;
+        hbar_equivalent?: unknown;
+    };
 }
 
 function accountIdToSolidityAddress(accountId: string): string {
@@ -217,6 +236,107 @@ function resolveSponsoredHederaNetwork(): HederaNetwork {
     return raw;
 }
 
+function parseEvmPrivateKey(raw: string | undefined): string | null {
+    if (!raw) return null;
+    const value = raw.trim();
+    if (!value) return null;
+    const hex = value.startsWith("0x") ? value.slice(2) : value;
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+        return null;
+    }
+    return `0x${hex}`;
+}
+
+function resolveLaunchpadResolver(
+    provider: JsonRpcProvider,
+): LaunchpadResolverContext | null {
+    const preferred = parseEvmPrivateKey(
+        process.env.LAUNCHPAD_RESOLVER_PRIVATE_KEY,
+    );
+    const fallback = parseEvmPrivateKey(
+        process.env.PAYMASTER_OPERATOR_KEY ??
+            process.env.OPERATOR_KEY ??
+            process.env.HEDERA_OPERATOR_KEY,
+    );
+    const privateKey = preferred ?? fallback;
+    if (!privateKey) return null;
+
+    const signer = new Wallet(privateKey, provider);
+    return {
+        signer,
+        address: getAddress(signer.address),
+    };
+}
+
+async function tryResolveCampaignOnRead(params: {
+    campaignAddress: string;
+    contracts: ResolvedDeploymentContracts;
+    provider: JsonRpcProvider;
+    resolver: LaunchpadResolverContext | null;
+    nowUnix: number;
+}): Promise<void> {
+    if (!params.resolver) return;
+
+    const readOnlyCampaign = new Contract(
+        params.campaignAddress,
+        params.contracts.campaignAbi,
+        params.provider,
+    );
+    const [listingRaw, statusRaw, fundingSupplyRaw] = await Promise.all([
+        readOnlyCampaign.listing(),
+        readOnlyCampaign.status(),
+        readOnlyCampaign.fundingSupply().catch(() => 0n),
+    ]);
+    const listing = normalizeListing(listingRaw);
+    const status = normalizeStatus(statusRaw);
+    const fundingSupply = BigInt(fundingSupplyRaw);
+
+    if (status !== 1 || params.nowUnix < Number(listing.deadline)) {
+        return;
+    }
+
+    const ownerRaw = await readOnlyCampaign.owner().catch(() => null);
+    const ownerAddress =
+        typeof ownerRaw === "string" && ownerRaw.length > 0
+            ? getAddress(ownerRaw)
+            : null;
+    if (ownerAddress && ownerAddress !== params.resolver.address) {
+        return;
+    }
+
+    const resolveTo = ownerAddress ?? params.resolver.address;
+    const pairCreateFeeValue =
+        fundingSupply >= listing.goal
+            ? await resolvePairCreateFeeWeibar({
+                  provider: params.provider,
+                  contracts: params.contracts,
+              })
+            : 0n;
+
+    try {
+        const data = params.contracts.campaignInterface.encodeFunctionData(
+            "resolveCampaign",
+            [resolveTo],
+        );
+        const tx = await params.resolver.signer.sendTransaction({
+            to: params.campaignAddress,
+            data,
+            gasLimit: 1_200_000n,
+            value: pairCreateFeeValue,
+        });
+        await tx.wait();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const warningKey = `${params.campaignAddress}:${message}`;
+        if (!warnedCampaignResolveFailures.has(warningKey)) {
+            warnedCampaignResolveFailures.add(warningKey);
+            console.warn(
+                `[launchpad] Failed to auto-resolve campaign ${params.campaignAddress}: ${message}`,
+            );
+        }
+    }
+}
+
 function resolvePaymasterCredentials(): {
     operatorId: string;
     operatorKey: string;
@@ -263,6 +383,98 @@ function resolveNativeHbarReserveTinybars(): bigint {
         throw new Error(
             "LAUNCHPAD_NATIVE_HBAR_RESERVE_HBAR must be a non-negative decimal HBAR value",
         );
+    }
+}
+
+function resolveConfiguredPairCreateFeeWeibar(): bigint | null {
+    const rawValue = process.env.LAUNCHPAD_PAIR_CREATE_FEE_HBAR;
+    if (!rawValue || rawValue.trim().length === 0) {
+        return null;
+    }
+    const value = rawValue.trim();
+    try {
+        const fee = parseUnits(value, 18);
+        if (fee < 0n) {
+            throw new Error("negative pair create fee");
+        }
+        return fee;
+    } catch {
+        throw new Error(
+            "LAUNCHPAD_PAIR_CREATE_FEE_HBAR must be a non-negative decimal HBAR value",
+        );
+    }
+}
+
+async function resolvePairCreateFeeWeibar(params: {
+    provider: JsonRpcProvider;
+    contracts: ResolvedDeploymentContracts;
+}): Promise<bigint> {
+    const chainId = (await params.provider.getNetwork()).chainId.toString();
+    const cached = pairCreateFeeCache.get(chainId);
+    if (cached) return cached;
+
+    const request = (async (): Promise<bigint> => {
+        try {
+            const launchpad = new Contract(
+                params.contracts.launchpadAddress,
+                params.contracts.launchpadAbi.length > 0
+                    ? params.contracts.launchpadAbi
+                    : LAUNCHPAD_READ_ABI,
+                params.provider,
+            );
+            const factoryAddress = getAddress(await launchpad.factory());
+            const factory = new Contract(
+                factoryAddress,
+                PAIR_FEE_FACTORY_ABI,
+                params.provider,
+            );
+            const pairCreateFeeTinycent = BigInt(await factory.pairCreateFee());
+            if (pairCreateFeeTinycent <= 0n) return 0n;
+
+            const exchangeRates =
+                await fetchMirrorJson<MirrorExchangeRateResponse>(
+                    "/api/v1/network/exchangerate",
+                );
+            const centEquivalent = parseMirrorAmount(
+                exchangeRates?.current_rate?.cent_equivalent,
+            );
+            const hbarEquivalent = parseMirrorAmount(
+                exchangeRates?.current_rate?.hbar_equivalent,
+            );
+            if (
+                centEquivalent === null ||
+                hbarEquivalent === null ||
+                centEquivalent <= 0n ||
+                hbarEquivalent <= 0n
+            ) {
+                throw new Error(
+                    "Mirror exchange rate values cent_equivalent/hbar_equivalent are unavailable",
+                );
+            }
+
+            const tinybarFee =
+                (pairCreateFeeTinycent * hbarEquivalent + centEquivalent - 1n) /
+                centEquivalent;
+            return tinybarsToWeibar(tinybarFee);
+        } catch (error) {
+            const configured = resolveConfiguredPairCreateFeeWeibar();
+            if (configured !== null) {
+                return configured;
+            }
+
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(
+                `Failed to resolve SaucerSwap pair creation fee dynamically: ${message}. Set LAUNCHPAD_PAIR_CREATE_FEE_HBAR as fallback.`,
+            );
+        }
+    })();
+
+    pairCreateFeeCache.set(chainId, request);
+    try {
+        return await request;
+    } catch (error) {
+        pairCreateFeeCache.delete(chainId);
+        throw error;
     }
 }
 
@@ -412,12 +624,10 @@ async function getTokenMetadata(
         typeof symbolFromContract === "string" &&
         symbolFromContract.trim().length > 0
             ? symbolFromContract
-            : metadataFromHts?.symbol ?? symbolFallback;
+            : (metadataFromHts?.symbol ?? symbolFallback);
     const symbol = rawSymbol.toUpperCase() === "WHBAR" ? "HBAR" : rawSymbol;
     const decimals =
-        decimalsFromContract ??
-        metadataFromHts?.decimals ??
-        (isWhbar ? 8 : 18);
+        decimalsFromContract ?? metadataFromHts?.decimals ?? (isWhbar ? 8 : 18);
 
     return {
         address: normalizedAddress,
@@ -699,7 +909,10 @@ async function executeSponsoredTransaction(
 
         if (typeof error === "string") {
             try {
-                return extractRevertData(JSON.parse(error) as unknown, depth + 1);
+                return extractRevertData(
+                    JSON.parse(error) as unknown,
+                    depth + 1,
+                );
             } catch {
                 return null;
             }
@@ -713,7 +926,15 @@ async function executeSponsoredTransaction(
             return direct === "0x" ? null : direct;
         }
 
-        for (const key of ["error", "info", "cause", "value", "result", "response", "receipt"]) {
+        for (const key of [
+            "error",
+            "info",
+            "cause",
+            "value",
+            "result",
+            "response",
+            "receipt",
+        ]) {
             if (record[key] !== undefined) {
                 const nested = extractRevertData(record[key], depth + 1);
                 if (nested) return nested;
@@ -777,11 +998,16 @@ async function executeSponsoredTransaction(
                 const directPrefix = "execution reverted: ";
                 const reasonStringPrefix = "reverted with reason string ";
                 if (lowered.includes(directPrefix)) {
-                    return raw.slice(lowered.indexOf(directPrefix) + directPrefix.length).trim();
+                    return raw
+                        .slice(
+                            lowered.indexOf(directPrefix) + directPrefix.length,
+                        )
+                        .trim();
                 }
                 if (lowered.includes(reasonStringPrefix)) {
                     const extracted = raw.slice(
-                        lowered.indexOf(reasonStringPrefix) + reasonStringPrefix.length,
+                        lowered.indexOf(reasonStringPrefix) +
+                            reasonStringPrefix.length,
                     );
                     return extracted.replace(/^['"]|['"]$/g, "").trim();
                 }
@@ -939,7 +1165,10 @@ async function resolveDeploymentContracts(
             launchpadAddress: launchpad.address,
             launchpadAbi: launchpad.abi,
             campaignAbi: campaign.abi,
-            campaignInterface: new Interface(campaign.abi),
+            campaignInterface: new Interface([
+                ...campaign.abi,
+                "function contributeHbar(address to) payable",
+            ]),
             whbarAddress: whbar.address,
             whbarInterface: new Interface(whbar.abi),
         };
@@ -954,11 +1183,12 @@ async function resolveDeploymentContracts(
     }
 }
 
-export async function getLaunchpadCampaigns(): Promise<
-    LaunchpadCampaignView[]
-> {
+export async function getLaunchpadCampaigns(params?: {
+    userHederaAccountId?: string | null;
+}): Promise<LaunchpadCampaignView[]> {
     const provider = resolveEvmProvider();
     const contracts = await resolveDeploymentContracts(provider);
+    const resolver = resolveLaunchpadResolver(provider);
 
     const launchpad = new Contract(
         contracts.launchpadAddress,
@@ -971,6 +1201,9 @@ export async function getLaunchpadCampaigns(): Promise<
         launchpad.campaigns(),
         launchpad.workToken(),
     ]);
+    const participantAddress = params?.userHederaAccountId
+        ? accountIdToSolidityAddress(params.userHederaAccountId)
+        : null;
     const workTokenAddress = getAddress(workTokenAddressRaw);
     const tokenCache = new Map<string, Promise<TokenMetadata>>();
 
@@ -980,7 +1213,11 @@ export async function getLaunchpadCampaigns(): Promise<
 
         if (cached) return cached;
 
-        const request = getTokenMetadata(provider, address, contracts.whbarAddress);
+        const request = getTokenMetadata(
+            provider,
+            address,
+            contracts.whbarAddress,
+        );
         tokenCache.set(address, request);
         return request;
     };
@@ -1012,7 +1249,19 @@ export async function getLaunchpadCampaigns(): Promise<
             }
 
             const listing = normalizeListing(listingRaw);
-            const status = normalizeStatus(statusRaw);
+            let status = normalizeStatus(statusRaw);
+            const deadlineUnix = Number(listing.deadline);
+
+            if (status === 1 && nowUnix >= deadlineUnix) {
+                await tryResolveCampaignOnRead({
+                    campaignAddress,
+                    contracts,
+                    provider,
+                    resolver,
+                    nowUnix,
+                });
+                status = normalizeStatus(await campaign.status());
+            }
             const { fundingSupplyRaw, campaignSupplyRaw } =
                 await readCampaignSuppliesWithFallback({
                     campaign,
@@ -1020,12 +1269,32 @@ export async function getLaunchpadCampaigns(): Promise<
                     listing,
                 });
             const statusLabel = getStatusLabel(status);
-            const deadlineUnix = Number(listing.deadline);
 
             const [fundingToken, campaignToken] = await Promise.all([
                 getCachedTokenMetadata(listing.fundingToken),
                 getCachedTokenMetadata(listing.campaignToken),
             ]);
+            const userContributionRaw = participantAddress
+                ? BigInt(
+                      await launchpad.balanceOf(
+                          participantAddress,
+                          BigInt(
+                              solidityPackedKeccak256(
+                                  ["address"],
+                                  [campaignAddress],
+                              ),
+                          ),
+                      ),
+                  )
+                : 0n;
+            const hasParticipated = userContributionRaw > 0n;
+            const isExpired = nowUnix >= deadlineUnix;
+            const inferredCanClaim =
+                status === 3 ||
+                (status === 1 && isExpired && fundingSupplyRaw >= listing.goal);
+            const inferredCanRefund =
+                status === 2 ||
+                (status === 1 && isExpired && fundingSupplyRaw < listing.goal);
 
             return {
                 campaignAddress,
@@ -1033,6 +1302,10 @@ export async function getLaunchpadCampaigns(): Promise<
                 statusLabel,
                 deadlineUnix,
                 isParticipatable: status === 1 && nowUnix < deadlineUnix,
+                hasParticipated,
+                userContributionRaw: userContributionRaw.toString(),
+                canClaim: hasParticipated && inferredCanClaim,
+                canRefund: hasParticipated && inferredCanRefund,
                 goal: listing.goal.toString(),
                 fundingSupply: fundingSupplyRaw.toString(),
                 campaignSupply: campaignSupplyRaw.toString(),
@@ -1078,7 +1351,11 @@ async function resolveCampaignFundingReadContext(params: {
     signerAccountId: string;
     participantEvmAddress: string;
     participantContractAddress: string;
-}): Promise<{ whbarBalance: bigint; nativeHbarBalance: bigint; allowance: bigint }> {
+}): Promise<{
+    whbarBalance: bigint;
+    nativeHbarBalance: bigint;
+    allowance: bigint;
+}> {
     if (isWhbarToken(params.tokenAddress, params.whbarAddress)) {
         const underlyingTokenAddress = await resolveFundingTokenAddressForHts({
             fundingTokenAddress: params.tokenAddress,
@@ -1094,30 +1371,38 @@ async function resolveCampaignFundingReadContext(params: {
                 `Unable to resolve WHBAR underlying token id for ${underlyingTokenAddress}.`,
             );
         }
-        const token = new Contract(underlyingTokenAddress, ERC20_ABI, params.provider);
+        const token = new Contract(
+            underlyingTokenAddress,
+            ERC20_ABI,
+            params.provider,
+        );
 
-        const [snapshot, nativeBalance, allowanceForEvmAddressOnChain, allowanceForContractAddressOnChain] =
-            await Promise.all([
-                getHtsTokenBalanceSnapshot({
-                    client: params.hederaClient,
-                    accountId: params.signerAccountId,
-                    tokenId: TokenId.fromString(whbarTokenIdRaw),
-                }),
-                getNativeHbarBalanceTinybars(
-                    params.hederaClient,
-                    params.signerAccountId,
-                ),
-                readTokenAllowance(
-                    token,
-                    params.participantEvmAddress,
-                    params.campaignAddress,
-                ),
-                readTokenAllowance(
-                    token,
-                    params.participantContractAddress,
-                    params.campaignAddress,
-                ),
-            ]);
+        const [
+            snapshot,
+            nativeBalance,
+            allowanceForEvmAddressOnChain,
+            allowanceForContractAddressOnChain,
+        ] = await Promise.all([
+            getHtsTokenBalanceSnapshot({
+                client: params.hederaClient,
+                accountId: params.signerAccountId,
+                tokenId: TokenId.fromString(whbarTokenIdRaw),
+            }),
+            getNativeHbarBalanceTinybars(
+                params.hederaClient,
+                params.signerAccountId,
+            ),
+            readTokenAllowance(
+                token,
+                params.participantEvmAddress,
+                params.campaignAddress,
+            ),
+            readTokenAllowance(
+                token,
+                params.participantContractAddress,
+                params.campaignAddress,
+            ),
+        ]);
 
         return {
             whbarBalance: snapshot.balance,
@@ -1162,7 +1447,10 @@ async function resolveCampaignFundingReadContext(params: {
             accountAddress: params.participantContractAddress,
         }),
         readNativeHbarBalance(params.provider, params.participantEvmAddress),
-        readNativeHbarBalance(params.provider, params.participantContractAddress),
+        readNativeHbarBalance(
+            params.provider,
+            params.participantContractAddress,
+        ),
         readTokenAllowance(
             token,
             params.participantEvmAddress,
@@ -1249,7 +1537,11 @@ async function createCampaignContributionContext(params: {
     ]);
     const listing = normalizeListing(listingRaw);
     const status = normalizeStatus(statusRaw);
-    const fundingToken = new Contract(listing.fundingToken, ERC20_ABI, provider);
+    const fundingToken = new Contract(
+        listing.fundingToken,
+        ERC20_ABI,
+        provider,
+    );
 
     if (status !== 1) {
         throw new Error("Campaign is not currently accepting contributions");
@@ -1411,34 +1703,32 @@ function createContributionReaders(ctx: {
     };
 }
 
-
 async function getHtsTokenBalanceSnapshot(params: {
-  client: HederaClient;
-  accountId: string;
-  tokenId: TokenId;
+    client: HederaClient;
+    accountId: string;
+    tokenId: TokenId;
 }): Promise<{ associated: boolean; balance: bigint }> {
+    const balance = await new AccountBalanceQuery()
+        .setAccountId(params.accountId)
+        .execute(params.client);
 
-  const balance = await new AccountBalanceQuery()
-    .setAccountId(params.accountId)
-    .execute(params.client);
+    const tokenIdStr = params.tokenId.toString();
 
-  const tokenIdStr = params.tokenId.toString();
+    let associated = false;
+    let balanceTiny = 0n;
 
-  let associated = false;
-  let balanceTiny = 0n;
-
-  for (const [id, amount] of balance.tokens ?? []) {
-    if (id.toString() === tokenIdStr) {
-      associated = true;
-      balanceTiny = BigInt(amount.toString());
-      break;
+    for (const [id, amount] of balance.tokens ?? []) {
+        if (id.toString() === tokenIdStr) {
+            associated = true;
+            balanceTiny = BigInt(amount.toString());
+            break;
+        }
     }
-  }
 
-  return {
-    associated,
-    balance: balanceTiny,
-  };
+    return {
+        associated,
+        balance: balanceTiny,
+    };
 }
 
 async function getNativeHbarBalanceTinybars(
@@ -1452,40 +1742,48 @@ async function getNativeHbarBalanceTinybars(
 }
 
 async function ensureTokenAssociationWithKms(params: {
-  hederaClient: HederaClient;
-  hederaAccountId: string;
-  tokenId: TokenId;
-  kms: ReturnType<typeof createKmsClientFromEnv>;
-  kmsKeyId: string;
+    hederaClient: HederaClient;
+    hederaAccountId: string;
+    tokenId: TokenId;
+    kms: ReturnType<typeof createKmsClientFromEnv>;
+    kmsKeyId: string;
 }): Promise<string | null> {
-  const snapshot = await getHtsTokenBalanceSnapshot({
-    client: params.hederaClient,
-    accountId: params.hederaAccountId,
-    tokenId: params.tokenId,
-  });
+    const snapshot = await getHtsTokenBalanceSnapshot({
+        client: params.hederaClient,
+        accountId: params.hederaAccountId,
+        tokenId: params.tokenId,
+    });
 
-  if (snapshot.associated) {
-    return null;
-  }
+    if (snapshot.associated) {
+        return null;
+    }
 
-  const signer = await createKmsHederaSigner({
-    kms: params.kms,
-    keyId: params.kmsKeyId,
-  });
+    const signer = await createKmsHederaSigner({
+        kms: params.kms,
+        keyId: params.kmsKeyId,
+    });
 
-  let tx = new TokenAssociateTransaction()
-    .setAccountId(AccountId.fromString(params.hederaAccountId))
-    .setTokenIds([params.tokenId]);
-  tx = await tx.freezeWith(params.hederaClient);
+    let tx = new TokenAssociateTransaction()
+        .setAccountId(AccountId.fromString(params.hederaAccountId))
+        .setTokenIds([params.tokenId]);
+    tx = await tx.freezeWith(params.hederaClient);
 
-  await addKmsSignatureToFrozenTransaction(tx, signer);
-  const { response, receipt } = await executeSignedTransaction(params.hederaClient, tx);
-  const status = receipt.status.toString();
-  if (status !== "SUCCESS" && status !== "TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT") {
-    throw new Error(`Funding token association failed with status: ${status}`);
-  }
+    await addKmsSignatureToFrozenTransaction(tx, signer);
+    const { response, receipt } = await executeSignedTransaction(
+        params.hederaClient,
+        tx,
+    );
+    const status = receipt.status.toString();
+    if (
+        status !== "SUCCESS" &&
+        status !== "TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT"
+    ) {
+        throw new Error(
+            `Funding token association failed with status: ${status}`,
+        );
+    }
 
-  return response.transactionId.toString();
+    return response.transactionId.toString();
 }
 
 export async function previewCampaignContribution(params: {
@@ -1543,13 +1841,15 @@ export async function participateInCampaign(params: {
                             );
                         }
 
-                        const transactionId = await ensureTokenAssociationWithKms({
-                            hederaClient: ctx.paymasterClient,
-                            hederaAccountId: ctx.signerContext.hederaAccountId,
-                            tokenId: TokenId.fromString(tokenIdRaw),
-                            kms: ctx.kms,
-                            kmsKeyId: ctx.signerContext.kmsKeyId,
-                        });
+                        const transactionId =
+                            await ensureTokenAssociationWithKms({
+                                hederaClient: ctx.paymasterClient,
+                                hederaAccountId:
+                                    ctx.signerContext.hederaAccountId,
+                                tokenId: TokenId.fromString(tokenIdRaw),
+                                kms: ctx.kms,
+                                kmsKeyId: ctx.signerContext.kmsKeyId,
+                            });
 
                         if (!transactionId) {
                             return null;
@@ -1565,7 +1865,9 @@ export async function participateInCampaign(params: {
                     },
                     wrapHbar: async (amount) => {
                         const wrapData =
-                            ctx.contracts.whbarInterface.encodeFunctionData("deposit()");
+                            ctx.contracts.whbarInterface.encodeFunctionData(
+                                "deposit()",
+                            );
                         const wrapResult = await executeSponsoredTransaction({
                             paymasterClient: ctx.paymasterClient,
                             hederaNetwork: ctx.hederaNetwork,
@@ -1595,23 +1897,25 @@ export async function participateInCampaign(params: {
                                 whbarAddress: ctx.contracts.whbarAddress,
                                 whbarInterface: ctx.contracts.whbarInterface,
                             });
-                        const approveData = erc20Interface.encodeFunctionData("approve", [
-                            ctx.config.campaignAddress,
-                            amount,
-                        ]);
-                        const approveResult = await executeSponsoredTransaction({
-                            paymasterClient: ctx.paymasterClient,
-                            hederaNetwork: ctx.hederaNetwork,
-                            kmsKeyId: ctx.signerContext.kmsKeyId,
-                            kms: ctx.kms,
-                            provider: ctx.provider,
-                            nonce,
-                            from: ctx.participantEvmAddress,
-                            to: tokenAddressToApprove,
-                            data: approveData,
-                            gasLimit: 150_000n,
-                            decodeInterfaces: [erc20Interface],
-                        });
+                        const approveData = erc20Interface.encodeFunctionData(
+                            "approve",
+                            [ctx.config.campaignAddress, amount],
+                        );
+                        const approveResult = await executeSponsoredTransaction(
+                            {
+                                paymasterClient: ctx.paymasterClient,
+                                hederaNetwork: ctx.hederaNetwork,
+                                kmsKeyId: ctx.signerContext.kmsKeyId,
+                                kms: ctx.kms,
+                                provider: ctx.provider,
+                                nonce,
+                                from: ctx.participantEvmAddress,
+                                to: tokenAddressToApprove,
+                                data: approveData,
+                                gasLimit: 150_000n,
+                                decodeInterfaces: [erc20Interface],
+                            },
+                        );
                         nonce += 1;
                         return {
                             type: "approve",
@@ -1620,24 +1924,36 @@ export async function participateInCampaign(params: {
                         };
                     },
                     contribute: async (amount, recipient) => {
+                        const isNativeContribution =
+                            ctx.config.isWhbarFundingToken;
                         const contributeData =
                             ctx.contracts.campaignInterface.encodeFunctionData(
-                                "contribute",
-                                [amount, recipient],
+                                isNativeContribution
+                                    ? "contributeHbar"
+                                    : "contribute",
+                                isNativeContribution
+                                    ? [recipient]
+                                    : [amount, recipient],
                             );
-                        const contributeResult = await executeSponsoredTransaction({
-                            paymasterClient: ctx.paymasterClient,
-                            hederaNetwork: ctx.hederaNetwork,
-                            kmsKeyId: ctx.signerContext.kmsKeyId,
-                            kms: ctx.kms,
-                            provider: ctx.provider,
-                            nonce,
-                            from: ctx.participantEvmAddress,
-                            to: ctx.config.campaignAddress,
-                            data: contributeData,
-                            gasLimit: 450_000n,
-                            decodeInterfaces: [ctx.contracts.campaignInterface],
-                        });
+                        const contributeResult =
+                            await executeSponsoredTransaction({
+                                paymasterClient: ctx.paymasterClient,
+                                hederaNetwork: ctx.hederaNetwork,
+                                kmsKeyId: ctx.signerContext.kmsKeyId,
+                                kms: ctx.kms,
+                                provider: ctx.provider,
+                                nonce,
+                                from: ctx.participantEvmAddress,
+                                to: ctx.config.campaignAddress,
+                                data: contributeData,
+                                gasLimit: 450_000n,
+                                value: isNativeContribution
+                                    ? tinybarsToWeibar(amount)
+                                    : undefined,
+                                decodeInterfaces: [
+                                    ctx.contracts.campaignInterface,
+                                ],
+                            });
                         nonce += 1;
                         return {
                             type: "contribute",
@@ -1661,5 +1977,377 @@ export async function participateInCampaign(params: {
     } finally {
         ctx.kms.destroy();
         ctx.paymasterClient.close();
+    }
+}
+
+export async function settleCampaignParticipation(params: {
+    userId: string;
+    campaignAddress: string;
+}): Promise<SettleCampaignParticipationResult> {
+    const provider = resolveEvmProvider();
+    const contracts = await resolveDeploymentContracts(provider);
+    const resolver = resolveLaunchpadResolver(provider);
+    const normalizedCampaignAddress = getAddress(params.campaignAddress);
+
+    const launchpad = new Contract(
+        contracts.launchpadAddress,
+        contracts.launchpadAbi.length > 0
+            ? contracts.launchpadAbi
+            : LAUNCHPAD_READ_ABI,
+        provider,
+    );
+    const campaign = new Contract(
+        normalizedCampaignAddress,
+        contracts.campaignAbi,
+        provider,
+    );
+
+    const [listingRaw, initialStatusRaw] = await Promise.all([
+        campaign.listing(),
+        campaign.status(),
+    ]);
+    const listing = normalizeListing(listingRaw);
+    const nowUnix = Math.floor(Date.now() / 1000);
+
+    let status = normalizeStatus(initialStatusRaw);
+    if (status === 1 && nowUnix >= Number(listing.deadline)) {
+        await tryResolveCampaignOnRead({
+            campaignAddress: normalizedCampaignAddress,
+            contracts,
+            provider,
+            resolver,
+            nowUnix,
+        });
+        status = normalizeStatus(await campaign.status());
+    }
+
+    const { fundingSupplyRaw } = await readCampaignSuppliesWithFallback({
+        campaign,
+        campaignAddress: normalizedCampaignAddress,
+        listing,
+    });
+
+    const signerContext = await getManagedWalletSignerContext(params.userId);
+    const participantAddress = accountIdToSolidityAddress(
+        signerContext.hederaAccountId,
+    );
+    const contributionRaw = BigInt(
+        await launchpad.balanceOf(
+            participantAddress,
+            BigInt(
+                solidityPackedKeccak256(
+                    ["address"],
+                    [normalizedCampaignAddress],
+                ),
+            ),
+        ),
+    );
+    if (contributionRaw <= 0n) {
+        throw new Error("No contribution balance available for this campaign.");
+    }
+
+    const kms = createKmsClientFromEnv();
+    const hederaNetwork = resolveSponsoredHederaNetwork();
+    const { operatorId, operatorKey } = resolvePaymasterCredentials();
+    const paymasterClient = createHederaClient({
+        network: hederaNetwork,
+        operatorId,
+        operatorKey,
+    });
+
+    try {
+        const signer = await createKmsEvmSigner({
+            kms,
+            keyId: signerContext.kmsKeyId,
+            provider,
+        });
+        const from = await signer.getAddress();
+        let nonce = await provider.getTransactionCount(from, "pending");
+
+        const expired = nowUnix >= Number(listing.deadline);
+        let action: "redeem" | "refund";
+        if (status === 3) {
+            action = "redeem";
+        } else if (
+            status === 2 ||
+            (status === 1 && expired && fundingSupplyRaw < listing.goal)
+        ) {
+            action = "refund";
+        } else if (
+            status === 1 &&
+            expired &&
+            fundingSupplyRaw >= listing.goal
+        ) {
+            const ownerRaw = await campaign.owner().catch(() => null);
+            const ownerAddress =
+                typeof ownerRaw === "string" && ownerRaw.length > 0
+                    ? getAddress(ownerRaw)
+                    : null;
+            const userAddress = getAddress(from);
+            let resolvedByOwner = false;
+            let resolverResolveError: string | null = null;
+            const pairCreateFeeValue = await resolvePairCreateFeeWeibar({
+                provider,
+                contracts,
+            });
+
+            // Prefer resolver/operator ownership path so campaign can resolve regardless of participant wallet.
+            if (resolver) {
+                const resolverAddress = getAddress(resolver.address);
+                if (!ownerAddress || ownerAddress === resolverAddress) {
+                    try {
+                        const resolveTo = ownerAddress ?? resolverAddress;
+                        const resolveData =
+                            contracts.campaignInterface.encodeFunctionData(
+                                "resolveCampaign",
+                                [resolveTo],
+                            );
+                        const standardErrorInterface = new Interface([
+                            "error Error(string)",
+                            "error Panic(uint256)",
+                        ]);
+                        const decodeResolverError = (
+                            error: unknown,
+                        ): string | null => {
+                            const extractHex = (
+                                value: unknown,
+                                depth = 0,
+                            ): string | null => {
+                                if (depth > 5 || value == null) return null;
+                                if (
+                                    typeof value === "string" &&
+                                    /^0x[0-9a-fA-F]+$/.test(value) &&
+                                    value !== "0x"
+                                ) {
+                                    return value;
+                                }
+                                if (typeof value !== "object") return null;
+                                const rec = value as Record<string, unknown>;
+                                for (const key of [
+                                    "data",
+                                    "error",
+                                    "info",
+                                    "cause",
+                                    "value",
+                                    "result",
+                                    "response",
+                                    "receipt",
+                                ]) {
+                                    const nested = extractHex(
+                                        rec[key],
+                                        depth + 1,
+                                    );
+                                    if (nested) return nested;
+                                }
+                                return null;
+                            };
+                            const revertData = extractHex(error);
+                            if (revertData) {
+                                for (const iface of [
+                                    contracts.campaignInterface,
+                                    standardErrorInterface,
+                                ]) {
+                                    try {
+                                        const parsed =
+                                            iface.parseError(revertData);
+                                        if (parsed) {
+                                            const args = parsed.args
+                                                .map((arg) =>
+                                                    typeof arg === "bigint"
+                                                        ? arg.toString()
+                                                        : String(arg),
+                                                )
+                                                .join(", ");
+                                            return `${parsed.name}(${args})`;
+                                        }
+                                    } catch {
+                                        // try next interface
+                                    }
+                                }
+                                return `revertData=${revertData}`;
+                            }
+                            return error instanceof Error
+                                ? error.message
+                                : String(error);
+                        };
+                        const simulateResolverRevert = async (): Promise<
+                            string | null
+                        > => {
+                            try {
+                                await provider.call({
+                                    from: resolverAddress,
+                                    to: normalizedCampaignAddress,
+                                    data: resolveData,
+                                    value: pairCreateFeeValue,
+                                });
+                                return null;
+                            } catch (error) {
+                                return decodeResolverError(error);
+                            }
+                        };
+                        const network = await provider.getNetwork();
+                        const estimatedGas = await provider
+                            .estimateGas({
+                                from: resolverAddress,
+                                to: normalizedCampaignAddress,
+                                data: resolveData,
+                                value: pairCreateFeeValue,
+                            })
+                            .catch(() => 1_200_000n);
+                        const paddedEstimate = (estimatedGas * 120n) / 100n;
+                        const gasLimit =
+                            paddedEstimate > 1_200_000n
+                                ? paddedEstimate
+                                : 1_200_000n;
+                        const resolverNonce = await provider.getTransactionCount(
+                            resolverAddress,
+                            "pending",
+                        );
+                        const signedResolveTx =
+                            await resolver.signer.signTransaction({
+                                chainId: BigInt(network.chainId),
+                                from: resolverAddress,
+                                to: normalizedCampaignAddress,
+                                data: resolveData,
+                                value: pairCreateFeeValue,
+                                nonce: resolverNonce,
+                                gasLimit,
+                                gasPrice: 0n,
+                            });
+
+                        const tx = new EthereumTransaction()
+                            .setEthereumData(getBytes(signedResolveTx))
+                            .setMaxGasAllowanceHbar(
+                                resolveMaxGasAllowanceHbar(),
+                            );
+                        const response = await tx.execute(paymasterClient as never);
+                        const readRecordReason = async (): Promise<string | null> => {
+                            const record = await response
+                                .getRecord(paymasterClient as never)
+                                .catch(() => null);
+                            const reason =
+                                record?.contractFunctionResult?.errorMessage?.trim();
+                            return reason && reason.length > 0 ? reason : null;
+                        };
+                        const receipt = await response
+                            .getReceipt(paymasterClient as never)
+                            .catch(async (error) => {
+                                const decoded = decodeResolverError(error);
+                                const simulated = await simulateResolverRevert();
+                                const recordReason = await readRecordReason();
+                                throw new Error(
+                                    decoded ??
+                                        simulated ??
+                                        recordReason ??
+                                        "Resolver receipt failed",
+                                );
+                            });
+                        const receiptStatus = receipt.status.toString();
+                        if (receiptStatus !== "SUCCESS") {
+                            const simulated = await simulateResolverRevert();
+                            const recordReason = await readRecordReason();
+                            throw new Error(
+                                recordReason ?? simulated ?? receiptStatus,
+                            );
+                        }
+                        resolvedByOwner = true;
+                    } catch (error) {
+                        resolverResolveError =
+                            error instanceof Error
+                                ? error.message
+                                : String(error);
+                    }
+                }
+            }
+
+            if (
+                !resolvedByOwner &&
+                ownerAddress &&
+                ownerAddress === userAddress
+            ) {
+                const resolveData =
+                    contracts.campaignInterface.encodeFunctionData(
+                        "resolveCampaign",
+                        [userAddress],
+                    );
+                await executeSponsoredTransaction({
+                    paymasterClient,
+                    hederaNetwork,
+                    kmsKeyId: signerContext.kmsKeyId,
+                    kms,
+                    provider,
+                    nonce,
+                    from: userAddress,
+                    to: normalizedCampaignAddress,
+                    data: resolveData,
+                    gasLimit: 1_200_000n,
+                    value: pairCreateFeeValue,
+                    decodeInterfaces: [contracts.campaignInterface],
+                });
+                nonce += 1;
+                resolvedByOwner = true;
+            }
+
+            status = normalizeStatus(await campaign.status());
+            if (status === 3) {
+                action = "redeem";
+            } else if (status === 2) {
+                action = "refund";
+            } else {
+                const ownerHint = ownerAddress
+                    ? ` Campaign owner is ${ownerAddress}.`
+                    : "";
+                const resolverHint = resolver
+                    ? ` Configured resolver is ${getAddress(resolver.address)}.`
+                    : " No resolver private key is configured.";
+                const resolverErrorHint = resolverResolveError
+                    ? ` Resolver error: ${resolverResolveError}.`
+                    : "";
+                const resolutionHint = resolvedByOwner
+                    ? " Resolution transaction ran, but campaign status is still Funding."
+                    : " Automatic resolution was not executed.";
+                throw new Error(
+                    `Campaign reached goal but is not resolved yet.${ownerHint}${resolverHint}${resolverErrorHint}${resolutionHint}`,
+                );
+            }
+        } else {
+            throw new Error(
+                "Campaign must be expired and resolved (or failed by goal check) before redeem/refund.",
+            );
+        }
+        const fnName =
+            action === "redeem" ? "redeemContribution" : "refundContribution";
+        const data = contracts.campaignInterface.encodeFunctionData(fnName, [
+            contributionRaw,
+            participantAddress,
+        ]);
+
+        const tx = await executeSponsoredTransaction({
+            paymasterClient,
+            hederaNetwork,
+            kmsKeyId: signerContext.kmsKeyId,
+            kms,
+            provider,
+            nonce,
+            from,
+            to: normalizedCampaignAddress,
+            data,
+            gasLimit: 650_000n,
+            decodeInterfaces: [contracts.campaignInterface],
+        });
+
+        return {
+            campaignAddress: normalizedCampaignAddress,
+            action,
+            amountRaw: contributionRaw.toString(),
+            transaction: {
+                type: action,
+                transactionId: tx.transactionId,
+                mirrorLink: tx.mirrorLink,
+            },
+        };
+    } finally {
+        kms.destroy();
+        paymasterClient.close();
     }
 }
