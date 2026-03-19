@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.28;
 
-import {IUniswapV2Pair} from "../interfaces/IUniswapV2Pair.sol";
-import {IUniswapV2Factory} from "../interfaces/IUniswapV2Factory.sol";
+import {IUniswapV2Pair} from "../../vendor/saucerswap-periphery/contracts/interfaces/IUniswapV2Pair.sol";
+import {IUniswapV2Factory} from "../../vendor/saucerswap-periphery/contracts/interfaces/IUniswapV2Factory.sol";
+import {IERC20} from "../../vendor/saucerswap-periphery/contracts/interfaces/IERC20.sol";
 
 import {Babylonian} from "./Babylonian.sol";
 import {FullMath} from "./FullMath.sol";
@@ -149,10 +150,11 @@ library UniswapV2LiquidityMathLibrary {
 		IUniswapV2Pair pair = IUniswapV2Pair(
 			UniswapV2Library.pairFor(factory, tokenA, tokenB)
 		);
+		address pairLpToken = pair.lpToken();
 
 		bool feeOn = IUniswapV2Factory(factory).feeTo() != address(0);
 		uint256 kLast = feeOn ? pair.kLast() : 0;
-		uint256 totalSupply = pair.totalSupply();
+		uint256 totalSupply = IERC20(pairLpToken).totalSupply();
 
 		return
 			computeLiquidityValue(
@@ -180,7 +182,7 @@ library UniswapV2LiquidityMathLibrary {
 		);
 
 		uint256 kLast = feeOn ? pair.kLast() : 0;
-		uint256 totalSupply = pair.totalSupply();
+		uint256 totalSupply = IERC20(address(pair)).totalSupply();
 
 		require(
 			liquidityAmount > 0 && liquidityAmount <= totalSupply,

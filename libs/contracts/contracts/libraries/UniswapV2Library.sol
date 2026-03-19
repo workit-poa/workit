@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.28;
 
-import {IUniswapV2Pair} from "../interfaces/IUniswapV2Pair.sol";
-import {IUniswapV2Factory} from "../interfaces/IUniswapV2Factory.sol";
+import {IUniswapV2Pair} from "../../vendor/saucerswap-periphery/contracts/interfaces/IUniswapV2Pair.sol";
 
 /// @title UniswapV2Library
 /// @notice Stateless helper functions used by Uniswap V2 routers
 library UniswapV2Library {
+	bytes4 private constant INIT_CODE_PAIR_HASH_SELECTOR =
+		bytes4(keccak256("INIT_CODE_PAIR_HASH()"));
+
 	/*//////////////////////////////////////////////////////////////
 	                          TOKEN SORTING
 	//////////////////////////////////////////////////////////////*/
@@ -36,8 +38,7 @@ library UniswapV2Library {
 		address tokenB
 	) internal view returns (address pair) {
 		(address token0, address token1) = sortTokens(tokenA, tokenB);
-		bytes32 initCodePairHash = IUniswapV2Factory(factory)
-			.INIT_CODE_PAIR_HASH();
+		bytes32 initCodePairHash = _initCodePairHash(factory);
 
 		pair = address(
 			uint160(
@@ -53,6 +54,19 @@ library UniswapV2Library {
 				)
 			)
 		);
+	}
+
+	function _initCodePairHash(
+		address factory
+	) private view returns (bytes32 initCodePairHash) {
+		(bool ok, bytes memory data) = factory.staticcall(
+			abi.encodeWithSelector(INIT_CODE_PAIR_HASH_SELECTOR)
+		);
+		require(
+			ok && data.length >= 32,
+			"UniswapV2Library: INIT_CODE_PAIR_HASH_FAILED"
+		);
+		initCodePairHash = abi.decode(data, (bytes32));
 	}
 
 	/*//////////////////////////////////////////////////////////////

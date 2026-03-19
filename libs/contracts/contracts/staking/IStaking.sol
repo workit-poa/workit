@@ -8,16 +8,15 @@ interface IStaking {
 	error PairNotFound();
 	error ZeroAmount();
 	error InvalidToken();
-	error SlippageTooHigh();
 	error InvalidInputLengths();
 	error UnauthorizedGToken();
 	error InvalidPair();
-	error InvalidPath();
 	error InsufficientLiquidity();
 	error InvalidSwapAmount();
 	error ZeroRecipient();
 	error NativeTransferFailed();
 	error UnsupportedRouterWhbar();
+	error UnauthorizedAssociator(address caller);
 
 	/*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -63,6 +62,11 @@ interface IStaking {
 		address indexed pair,
 		uint256 liquidityAmount
 	);
+	event AssociationCallerUpdated(
+		address indexed caller,
+		bool allowed,
+		address indexed updatedBy
+	);
 
 	/*//////////////////////////////////////////////////////////////
 	                            STAKING
@@ -97,6 +101,18 @@ interface IStaking {
 		address to,
 		uint256 epochsLocked
 	) external;
+
+	/// @notice Associate staking with a batch of potential custody tokens.
+	/// @dev Intended for trusted callers (owner/authorised system contracts) before token receipt flows.
+	function safeAssociateTokens(
+		address[] calldata tokens
+	)
+		external
+		returns (
+			uint256 associatedCount,
+			uint256 alreadyAssociatedCount,
+			uint256 nonHtsCount
+		);
 
 	/*//////////////////////////////////////////////////////////////
 	                SINGLE-SIDED LIQUIDITY
@@ -146,6 +162,10 @@ interface IStaking {
 	function rewards() external view returns (address);
 
 	function workToken() external view returns (address);
+
+    function whbar() external view returns (address);
+
+    function whbarToken() external view returns (address);
 
 	function gToken() external view returns (address);
 }

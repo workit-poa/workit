@@ -23,7 +23,6 @@ interface ICampaign {
 		uint256 deadline;
 	}
 
-	error StatusUnchanged(Status status);
 	error ZeroLaunchpad(address launchpad);
 	error ZeroGToken(address gToken);
 	error ZeroFundingToken(address token);
@@ -42,18 +41,11 @@ interface ICampaign {
 	error GoalNotReached(uint256 goal, uint256 fundingSupply);
 	error MissingCampaignTokens(uint256 campaignSupply);
 	error ZeroAddress(address addr);
-	error CampaignNotExpired(uint256 deadline, uint256 currentTime);
-	error NotAllowed(address caller, address launchpad, address migrator);
-	error CampaignFundsFound(uint256 securityCount, uint256 campaignSupply);
 	error InvalidFinalStatus(Status status);
-	error UnauthorizedCaller(address caller, address expected);
-	error PendingContributionZero(uint256 pendingContribution);
 	error InvalidListingGTokenNonce(uint256 nonce);
 	error UnauthorizedGToken();
-	error InvalidGTokenSender();
 	error MergeFailed();
 	error TokenAssociationFailed(address token, uint256 responseCode);
-	error UnsupportedNativeFundingToken(address fundingToken);
 	error WrappedNativeDepositFailed(address token, uint256 value);
 
 	/*//////////////////////////////////////////////////////////////
@@ -73,19 +65,15 @@ interface ICampaign {
 	/// @dev Internally wraps HBAR into the configured funding token and mints claim units from received wrapped balance.
 	function contributeHbar(address to) external payable;
 
-	/// @notice Associates this campaign contract with listing tokens when required by HTS.
-	/// @dev Safe to call multiple times.
-	function associateListingTokens() external;
-
 	/*//////////////////////////////////////////////////////////////
 	                      CAMPAIGN ACTIONS
 	//////////////////////////////////////////////////////////////*/
 
-	/// @notice Deploy liquidity pair after funding completes
-	function deployPair() external payable;
+	/// @notice Deploy campaign liquidity after funding completes
+	function deployLiquidity() external;
 
 	/// @notice Owner-driven resolution (normal path)
-	function resolveCampaign(address to) external payable returns (Status);
+	function resolveCampaign(address to) external returns (Status);
 
 	/// @notice Redeem claim token for liquidity after success
 	function redeemContribution(
@@ -103,9 +91,6 @@ interface ICampaign {
 	function status() external view returns (Status);
 
 	function listing() external view returns (Listing memory);
-
-	/// @notice Effective ERC20 token used for funding transfers (resolves wrappers like WHBAR to underlying HTS token).
-	function fundingErc20Token() external view returns (address);
 
 	function fundingSupply() external view returns (uint256);
 

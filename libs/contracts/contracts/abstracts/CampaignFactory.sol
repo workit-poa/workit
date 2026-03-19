@@ -2,10 +2,19 @@
 pragma solidity ^0.8.28;
 
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {Campaign} from "../listing/Campaign.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 
 import {ICampaign} from "../listing/ICampaign.sol";
 import {CampaignLib} from "../listing/CampaignLib.sol";
+
+interface ICampaignInitializable {
+	function initialize(
+		address launchpad_,
+		address gToken_,
+		ICampaign.Listing calldata listing_,
+		address initialOwner
+	) external;
+}
 
 abstract contract CampaignFactory {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -23,10 +32,12 @@ abstract contract CampaignFactory {
 
 	function _createCampaign(
 		address creator,
+		address campaignBeacon_,
 		address gToken_,
 		ICampaign.Listing memory listing_
 	) internal returns (address campaign, uint256 campaignId) {
 		if (creator == address(0)) revert ZeroAddress();
+		if (campaignBeacon_ == address(0)) revert ZeroAddress();
 		bytes32 salt = keccak256(
 			abi.encodePacked(
 				creator,
@@ -39,9 +50,18 @@ abstract contract CampaignFactory {
 				listing_.deadline
 			)
 		);
-		campaign = address(
-			new Campaign{salt: salt}(address(this), gToken_, listing_)
-		);
+		campaign = address(new BeaconProxy{salt: salt}(
+			campaignBeacon_,
+			abi.encodeCall(
+				ICampaignInitializable.initialize,
+				(
+					address(this),
+					gToken_,
+					listing_,
+					address(this)
+				)
+			)
+		));
 
 		// Deterministic ID derived from deployed campaign address
 		campaignId = CampaignLib.tokenId(campaign);
