@@ -17,21 +17,19 @@ describe("Rewards", function () {
 		const gToken = (await gTokenFactory.deploy()) as any;
 		await gToken.waitForDeployment();
 
-		const controllerFactory = await ethers.getContractFactory(
-			"MockWorkEmissionController",
-		);
-		const workController = (await controllerFactory.deploy()) as any;
-		await workController.waitForDeployment();
+		const workFactory = await ethers.getContractFactory("MockWORK");
+		const work = (await workFactory.deploy()) as any;
+		await work.waitForDeployment();
 
 		const rewardsFactory = await ethers.getContractFactory("Rewards");
 		const rewards = (await rewardsFactory.deploy(
 			await workToken.getAddress(),
 			await gToken.getAddress(),
-			await workController.getAddress(),
+			await work.getAddress(),
 		)) as any;
 		await rewards.waitForDeployment();
 
-		return { owner, user, workToken, gToken, workController, rewards };
+		return { owner, user, workToken, gToken, work, rewards };
 	}
 
 	function baseAttributes(stakeWeight: bigint, rewardPerShare: bigint = 0n) {
@@ -52,13 +50,11 @@ describe("Rewards", function () {
 	}
 
 	it("initializes with Work naming and stores references", async function () {
-		const { workToken, gToken, workController, rewards } = await deployFixture();
+		const { workToken, gToken, work, rewards } = await deployFixture();
 
 		expect(await rewards.workToken()).to.equal(await workToken.getAddress());
 		expect(await rewards.gToken()).to.equal(await gToken.getAddress());
-		expect(await rewards.workEmissionController()).to.equal(
-			await workController.getAddress(),
-		);
+		expect(await rewards.work()).to.equal(await work.getAddress());
 	});
 
 	it("updates reserve and rewardPerShare when new WRK arrives", async function () {
@@ -90,7 +86,7 @@ describe("Rewards", function () {
 	});
 
 	it("computes claimable including pending emission from controller", async function () {
-		const { user, rewards, workToken, gToken, workController } =
+		const { user, rewards, workToken, gToken, work } =
 			await deployFixture();
 
 		await gToken.setTotalStakeWeight(100n);
@@ -99,14 +95,14 @@ describe("Rewards", function () {
 		await workToken.mint(await rewards.getAddress(), 1000n);
 		await rewards.updateRewardReserve();
 
-		await workController.setStakersWorkToEmit(500n);
+		await work.setStakersWorkToEmit(500n);
 
 		const claimable = await rewards.claimableFor(user.address, [1n]);
 		expect(claimable).to.equal(600n);
 	});
 
 	it("claims rewards, updates gToken attributes, and transfers WRK", async function () {
-		const { user, rewards, workToken, gToken, workController } =
+		const { user, rewards, workToken, gToken, work } =
 			await deployFixture();
 
 		await gToken.setTotalStakeWeight(100n);
@@ -114,7 +110,7 @@ describe("Rewards", function () {
 
 		await workToken.mint(await rewards.getAddress(), 1000n);
 		await rewards.updateRewardReserve();
-		await workController.setCurrentEpoch(7n);
+		await work.setCurrentEpoch(7n);
 
 		await rewards.connect(user).claimRewards([1n], user.address);
 

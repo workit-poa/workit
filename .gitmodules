@@ -1,0 +1,6 @@
+[submodule "libs/contracts/vendor/saucerswap-core"]
+	path = libs/contracts/vendor/saucerswap-core
+	url = https://github.com/saucerswaplabs/saucerswaplabs-core.git
+[submodule "libs/contracts/vendor/saucerswap-periphery"]
+	path = libs/contracts/vendor/saucerswap-periphery
+	url = https://github.com/saucerswaplabs/saucerswap-periphery.git

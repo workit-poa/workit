@@ -3,19 +3,15 @@ import {
     AccountBalanceQuery,
     AccountId,
     EthereumTransaction,
-    TokenAssociateTransaction,
     TokenId,
 } from "@hashgraph/sdk";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
-    addKmsSignatureToFrozenTransaction,
     createHederaClient,
     createHederaJsonRpcProvider,
-    createKmsHederaSigner,
     createKmsClientFromEnv,
     createKmsEvmSigner,
-    executeSignedTransaction,
     mirrorLinkForTransaction,
     parseHederaEvmNetwork,
     signEvmTransactionWithKmsWallet,
@@ -49,6 +45,11 @@ import {
     prepareCampaignContribution,
     type ContributionConfig,
 } from "./contribution";
+import {
+    ensureTokenAssociationWithKms,
+    getHtsTokenBalanceSnapshot,
+    resolveTokenIdFromAddress,
+} from "../hedera/token-association";
 
 const LAUNCHPAD_READ_ABI = [
     "function campaigns() view returns (address[])",
@@ -790,20 +791,10 @@ async function resolveAccountIdFromAddress(
     return payload.account;
 }
 
-async function resolveTokenIdFromAddress(
-    tokenAddress: string,
-): Promise<string | null> {
-    try {
-        return TokenId.fromSolidityAddress(getAddress(tokenAddress)).toString();
-    } catch {
-        return null;
-    }
-}
-
 async function getTokenMetadataFromHts(
     tokenAddress: string,
 ): Promise<TokenMetadata | null> {
-    const tokenId = await resolveTokenIdFromAddress(tokenAddress);
+    const tokenId = resolveTokenIdFromAddress(tokenAddress);
     if (!tokenId) return null;
 
     const payload = await fetchMirrorJson<MirrorTokenResponse>(
@@ -828,7 +819,7 @@ async function getTokenBalanceFromHts(
     tokenAddress: string,
     owner: { accountId?: string; accountAddress?: string },
 ): Promise<bigint | null> {
-    const tokenId = await resolveTokenIdFromAddress(tokenAddress);
+    const tokenId = resolveTokenIdFromAddress(tokenAddress);
 
     if (!tokenId) return null;
 
@@ -863,7 +854,7 @@ async function getTokenAllowanceFromHts(params: {
     const ownerAccountId = params.ownerAccountId.trim();
     if (!ownerAccountId) return null;
 
-    const tokenId = await resolveTokenIdFromAddress(params.tokenAddress);
+    const tokenId = resolveTokenIdFromAddress(params.tokenAddress);
     if (!tokenId) return null;
 
     const spenderId = await resolveAccountIdFromAddress(params.spenderAddress);
@@ -1363,7 +1354,7 @@ async function resolveCampaignFundingReadContext(params: {
             whbarAddress: params.whbarAddress,
             whbarInterface: params.whbarInterface,
         });
-        const whbarTokenIdRaw = await resolveTokenIdFromAddress(
+        const whbarTokenIdRaw = resolveTokenIdFromAddress(
             getAddress(underlyingTokenAddress),
         );
         if (!whbarTokenIdRaw) {
@@ -1703,34 +1694,6 @@ function createContributionReaders(ctx: {
     };
 }
 
-async function getHtsTokenBalanceSnapshot(params: {
-    client: HederaClient;
-    accountId: string;
-    tokenId: TokenId;
-}): Promise<{ associated: boolean; balance: bigint }> {
-    const balance = await new AccountBalanceQuery()
-        .setAccountId(params.accountId)
-        .execute(params.client);
-
-    const tokenIdStr = params.tokenId.toString();
-
-    let associated = false;
-    let balanceTiny = 0n;
-
-    for (const [id, amount] of balance.tokens ?? []) {
-        if (id.toString() === tokenIdStr) {
-            associated = true;
-            balanceTiny = BigInt(amount.toString());
-            break;
-        }
-    }
-
-    return {
-        associated,
-        balance: balanceTiny,
-    };
-}
-
 async function getNativeHbarBalanceTinybars(
     client: HederaClient,
     accountId: string,
@@ -1739,51 +1702,6 @@ async function getNativeHbarBalanceTinybars(
         .setAccountId(accountId)
         .execute(client);
     return BigInt(balance.hbars.toTinybars().toString());
-}
-
-async function ensureTokenAssociationWithKms(params: {
-    hederaClient: HederaClient;
-    hederaAccountId: string;
-    tokenId: TokenId;
-    kms: ReturnType<typeof createKmsClientFromEnv>;
-    kmsKeyId: string;
-}): Promise<string | null> {
-    const snapshot = await getHtsTokenBalanceSnapshot({
-        client: params.hederaClient,
-        accountId: params.hederaAccountId,
-        tokenId: params.tokenId,
-    });
-
-    if (snapshot.associated) {
-        return null;
-    }
-
-    const signer = await createKmsHederaSigner({
-        kms: params.kms,
-        keyId: params.kmsKeyId,
-    });
-
-    let tx = new TokenAssociateTransaction()
-        .setAccountId(AccountId.fromString(params.hederaAccountId))
-        .setTokenIds([params.tokenId]);
-    tx = await tx.freezeWith(params.hederaClient);
-
-    await addKmsSignatureToFrozenTransaction(tx, signer);
-    const { response, receipt } = await executeSignedTransaction(
-        params.hederaClient,
-        tx,
-    );
-    const status = receipt.status.toString();
-    if (
-        status !== "SUCCESS" &&
-        status !== "TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT"
-    ) {
-        throw new Error(
-            `Funding token association failed with status: ${status}`,
-        );
-    }
-
-    return response.transactionId.toString();
 }
 
 export async function previewCampaignContribution(params: {
@@ -1832,7 +1750,7 @@ export async function participateInCampaign(params: {
                                 whbarInterface: ctx.contracts.whbarInterface,
                             });
 
-                        const tokenIdRaw = await resolveTokenIdFromAddress(
+                        const tokenIdRaw = resolveTokenIdFromAddress(
                             tokenAddressToAssociate,
                         );
                         if (!tokenIdRaw) {

@@ -380,6 +380,15 @@ async function main() {
 			console.log(
 				`- ${campaignAddress} status=${STATUS_LABEL[status] ?? String(status)} owner=${owner} deadline=${listing.deadline.toString()} expired=${isExpired}`,
 			);
+			if (dryRun) {
+				console.log(
+					"  DRY_RUN: associateListingTokens() would be called before resolve checks.",
+				);
+			} else {
+				const associateTx = await campaign.associateListingTokens();
+				await associateTx.wait();
+				console.log("  listing token association refreshed");
+			}
 
 			let shouldResolve = false;
 			let resolveTo = ethers.ZeroAddress;

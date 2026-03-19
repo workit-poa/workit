@@ -7,22 +7,22 @@ import {
   AccountBalanceQuery,
   AccountId,
   Hbar,
-  TokenAssociateTransaction,
   TokenId,
   TransferTransaction,
 } from "@hashgraph/sdk";
 import {
-  addKmsSignatureToFrozenTransaction,
   createHederaClientFromEnv,
   createHederaJsonRpcProvider,
   createKmsClientFromEnv,
   createKmsEvmSigner,
-  createKmsHederaSigner,
-  executeSignedTransaction,
   parseHederaEvmNetwork,
 } from "@workit-poa/hedera-kms-wallet";
 import { Contract, Interface, formatUnits, getAddress, isAddress, type InterfaceAbi } from "ethers";
 import whbarAbiJson from "./WHBAR.json";
+import {
+  ensureTokenAssociationWithKms,
+  resolveTokenIdFromAddress,
+} from "../lib/hedera/token-association";
 
 const HBAR_DECIMALS = 8;
 const HBAR_WEI_DECIMALS = 18;
@@ -272,10 +272,6 @@ async function getNativeHbarBalanceTinybars(client: HederaClient, accountId: str
   return BigInt(balance.hbars.toTinybars().toString());
 }
 
-function resolveWhbarTokenIdFromContractAddress(tokenAddress: string): TokenId {
-  return TokenId.fromSolidityAddress(getAddress(tokenAddress));
-}
-
 async function getHtsTokenBalanceTinybars(params: {
   client: HederaClient;
   accountId: string;
@@ -286,72 +282,6 @@ async function getHtsTokenBalanceTinybars(params: {
     .execute(params.client as never);
   const tokenBalance = balance.tokens?.get(params.tokenId);
   return BigInt(tokenBalance?.toString() ?? "0");
-}
-
-async function getHtsTokenBalanceSnapshot(params: {
-  client: HederaClient;
-  accountId: string;
-  tokenId: TokenId;
-}): Promise<{ associated: boolean; balance: bigint }> {
-
-  const balance = await new AccountBalanceQuery()
-    .setAccountId(params.accountId)
-    .execute(params.client);
-
-  const tokenIdStr = params.tokenId.toString();
-
-  let associated = false;
-  let balanceTiny = 0n;
-
-  for (const [id, amount] of balance.tokens ?? []) {
-    if (id.toString() === tokenIdStr) {
-      associated = true;
-      balanceTiny = BigInt(amount.toString());
-      break;
-    }
-  }
-
-  return {
-    associated,
-    balance: balanceTiny,
-  };
-}
-
-async function ensureTokenAssociationWithKms(params: {
-  hederaClient: HederaClient;
-  hederaAccountId: string;
-  tokenId: TokenId;
-  kms: ReturnType<typeof createKmsClientFromEnv>;
-  kmsKeyId: string;
-}): Promise<string | null> {
-  const snapshot = await getHtsTokenBalanceSnapshot({
-    client: params.hederaClient,
-    accountId: params.hederaAccountId,
-    tokenId: params.tokenId,
-  });
-  console.log({snapshot})
-  if (snapshot.associated) {
-    return null;
-  }
-
-  const signer = await createKmsHederaSigner({
-    kms: params.kms,
-    keyId: params.kmsKeyId,
-  });
-
-  let tx = new TokenAssociateTransaction()
-    .setAccountId(params.hederaAccountId)
-    .setTokenIds([params.tokenId]);
-  tx = await tx.freezeWith(params.hederaClient as never);
-
-  await addKmsSignatureToFrozenTransaction(tx as never, signer);
-  const { response, receipt } = await executeSignedTransaction(params.hederaClient as never, tx as never);
-  const status = receipt.status.toString();
-  if (status !== "SUCCESS" && status !== "TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT") {
-    throw new Error(`WHBAR token association failed with status: ${status}`);
-  }
-
-  return response.transactionId.toString();
 }
 
 async function topUpWalletWithOperator(params: {
@@ -403,7 +333,11 @@ async function depositOneHbarIntoWhbar(params: {
     const walletEvmAddress = await signer.getAddress();
     const whbarContract = new Contract(params.whbarAddress, WHBAR_ABI, provider);
     const whbarTokenAddress = getAddress(await whbarContract.token());
-    const whbarTokenId = resolveWhbarTokenIdFromContractAddress(whbarTokenAddress);
+    const whbarTokenIdRaw = resolveTokenIdFromAddress(whbarTokenAddress);
+    if (!whbarTokenIdRaw) {
+      throw new Error(`Unable to resolve WHBAR token ID from address ${whbarTokenAddress}`);
+    }
+    const whbarTokenId = TokenId.fromString(whbarTokenIdRaw);
     const associationTxId = await ensureTokenAssociationWithKms({
       hederaClient: params.hederaClient,
       hederaAccountId: params.hederaAccountId,

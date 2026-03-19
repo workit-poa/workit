@@ -86,19 +86,19 @@ pnpm --filter @workit-poa/contracts deploy:mainnet
 `deploy:local` expects a local Hedera JSON-RPC relay at `HEDERA_LOCAL_RPC_URL` (default `http://localhost:7546`).
 Deploy flow:
 
-1. Deploy `WorkEmissionController`.
+1. Deploy `WORK`.
 2. Create WRK HTS fungible token from the controller.
 3. Deploy `GToken` (`constructor(admin, epochLength)`).
 4. Create position NFT token via `createPositionNft(maxSupply, name, symbol, memo)`.
 5. Optionally associate accounts from `POSITION_NFT_ASSOCIATE_ACCOUNTS`.
-6. Deploy `Rewards` via constructor (or reuse `WORK_REWARDS_ADDRESS`).
-7. Grant `GToken.UPDATE_ROLE` to `Rewards`.
-8. Set controller staking collector (`WORK_STAKING_ADDRESS` or rewards address).
-9. Deploy `Staking` via constructor.
-10. Grant `GToken.MINTER_ROLE` to `Staking`.
-11. Deploy `Launchpad` via constructor.
-12. Prepare token approvals.
-13. Create WRK/HBAR campaign (funding token uses WHBAR on-chain).
+6. Deploy `Rewards` via UUPS `initialize` (or reuse `WORK_REWARDS_ADDRESS`).
+7. Run contract token association planner for `Rewards` (`WRK`).
+8. Grant `GToken.UPDATE_ROLE` to `Rewards`.
+9. Set controller staking collector (`WORK_STAKING_ADDRESS` or rewards address).
+10. Deploy `Staking` via UUPS `initialize`.
+11. Run contract token association planner for `Staking` (`WRK`, and position NFT when configured).
+12. Grant `GToken.MINTER_ROLE` to `Staking`.
+13. Deploy `Launchpad` + `Campaign` beacon/proxies and create WRK/HBAR campaign.
 
 After each successful deploy, the script also writes a deployment ABI library:
 
@@ -145,6 +145,27 @@ Launchpad orchestration notes:
   - Lock: `180` epochs
   - Duration: `3600` seconds (1 hour)
 - `createWorkToken` now transfers ICO WRK supply directly to the owner during creation.
+
+## Token association lifecycle
+
+The protocol now uses a single, idempotent token-association strategy for Hedera:
+
+- Shared Solidity helper: `contracts/libraries/HederaTokenAssociationLib.sol`.
+- Runtime association in custody flows:
+  - `Campaign`: funding token + campaign token.
+  - `Launchpad`: newly created LP/pair token.
+  - `Staking`: inbound stake tokens, LP/pair tokens, and configured position NFT.
+  - `Rewards`: WRK token.
+- Owner-managed lifecycle functions for post-deploy/post-upgrade migrations:
+  - `Rewards.associateTokenIfNeeded`, `Rewards.associateTokensIfNeeded`, `Rewards.associateWorkTokenIfNeeded`.
+  - `Staking.associateTokenIfNeeded`, `Staking.associateTokensIfNeeded`, `Staking.associateCoreTokensIfNeeded`.
+  - `Staking.safeAssociateTokens` for trusted system callers (Launchpad) in pair creation/stake flows.
+  - `Launchpad.associateTokensIfNeeded`.
+- Script support:
+  - `scripts/utils/token-association.ts` centralises idempotent planning/execution with retry logs.
+  - `scripts/deploy.ts` and `scripts/upgrade-core-contracts.ts` call the planner automatically.
+  - Deploy/upgrade scripts set `Staking.setAssociationCaller(launchpad, true)` so Launchpad can run `safeAssociateTokens`.
+  - `scripts/resolve-campaigns.ts` refreshes campaign listing associations before resolution.
 
 ## Open a console on Hedera
 
