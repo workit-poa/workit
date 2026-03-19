@@ -78,15 +78,29 @@ describe("Campaign + SaucerSwap integration (live Hedera testnet, deployed contr
             launchpadDeployment.abi,
             owner,
         );
-        const campaign = await ethers.getContractAt(
-            "Campaign",
-            "0x311794b1940AA4c5F9dF1a77c2d581CD8997467b",
-            owner,
-        );
-        const campaignAddress = await campaign.getAddress();
         const work = new ethers.Contract(
             workDeployment.address,
             workDeployment.abi,
+            owner,
+        );
+        const wrkTokenAddress = ethers.getAddress(await work.token());
+        const stakingAddress = ethers.getAddress(await launchpad.staking());
+        const staking = new ethers.Contract(
+            stakingAddress,
+            ["function whbarToken() external view returns (address)"],
+            owner,
+        );
+        const whbarTokenAddress = ethers.getAddress(await staking.whbarToken());
+        const campaignAddress = ethers.getAddress(
+            await launchpad.campaignByTokens(whbarTokenAddress, wrkTokenAddress),
+        );
+        expect(campaignAddress).to.not.equal(
+            ethers.ZeroAddress,
+            "WHBAR/WRK campaign not found on launchpad",
+        );
+        const campaign = await ethers.getContractAt(
+            "Campaign",
+            campaignAddress,
             owner,
         );
 
@@ -99,7 +113,6 @@ describe("Campaign + SaucerSwap integration (live Hedera testnet, deployed contr
             "Signer must own deployed campaign",
         );
 
-        const wrkTokenAddress = ethers.getAddress(await work.token());
         const campaignId = BigInt(
             ethers.solidityPackedKeccak256(["address"], [campaignAddress]),
         );
